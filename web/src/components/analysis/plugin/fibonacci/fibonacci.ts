@@ -22,11 +22,29 @@ export const fibonacciExtensionLevelOrder = [
     'ext2618',
 ] as const;
 
+export const fibonacciRetracementBandOrder = [
+    'zone0_236',
+    'zone236_382',
+    'zone382_5',
+    'zone5_618',
+    'zone618_786',
+    'zone786_1',
+] as const;
+
+export const fibonacciExtensionBandOrder = [
+    'zone1272_1414',
+    'zone1414_1618',
+    'zone1618_2',
+    'zone2_2618',
+] as const;
+
 // Backward-compatible alias used by context wiring.
 export const fibonacciLevelOrder = fibonacciRetracementLevelOrder;
 
 export type RetracementLevelKey = typeof fibonacciRetracementLevelOrder[number];
 export type ExtensionLevelKey = typeof fibonacciExtensionLevelOrder[number];
+export type RetracementBandKey = typeof fibonacciRetracementBandOrder[number];
+export type ExtensionBandKey = typeof fibonacciExtensionBandOrder[number];
 
 const RETRACEMENT_RATIOS: Record<RetracementLevelKey, number> = {
     level0: 0,
@@ -149,10 +167,18 @@ export type FibonacciComputation = {
 
 type RenderPoint = LineData<Time> | WhitespaceData<Time>;
 
+export type FibonacciZoneBand = {
+    topPrice: number;
+    bottomPrice: number;
+    data: Array<LineData<Time> | WhitespaceData<Time>>;
+};
+
 export type FibonacciRenderData = {
     supertrendData: LineData<Time>[];
     retracementData: Record<RetracementLevelKey, RenderPoint[]>;
     extensionData: Record<ExtensionLevelKey, RenderPoint[]>;
+    retracementZoneBands: Record<RetracementBandKey, FibonacciZoneBand[]>;
+    extensionZoneBands: Record<ExtensionBandKey, FibonacciZoneBand[]>;
     trendlineData: RenderPoint[];
 };
 
@@ -174,12 +200,36 @@ const extensionLineColorKey: Record<ExtensionLevelKey, keyof FibonacciConfig> = 
     ext2618: 'ext2618LineColor',
 };
 
+const retracementBgColorKey: Record<RetracementBandKey, keyof FibonacciConfig> = {
+    zone0_236: 'level236BgColor',
+    zone236_382: 'level382BgColor',
+    zone382_5: 'level5BgColor',
+    zone5_618: 'level618BgColor',
+    zone618_786: 'level786BgColor',
+    zone786_1: 'level1BgColor',
+};
+
+const extensionBgColorKey: Record<ExtensionBandKey, keyof FibonacciConfig> = {
+    zone1272_1414: 'ext1414BgColor',
+    zone1414_1618: 'ext1618BgColor',
+    zone1618_2: 'ext2BgColor',
+    zone2_2618: 'ext2618BgColor',
+};
+
 export function getRetracementLineColor(config: FibonacciConfig, key: RetracementLevelKey): string {
     return config[retracementLineColorKey[key]] as string;
 }
 
 export function getExtensionLineColor(config: FibonacciConfig, key: ExtensionLevelKey): string {
     return config[extensionLineColorKey[key]] as string;
+}
+
+export function getRetracementBgColor(config: FibonacciConfig, key: RetracementBandKey): string {
+    return config[retracementBgColorKey[key]] as string;
+}
+
+export function getExtensionBgColor(config: FibonacciConfig, key: ExtensionBandKey): string {
+    return config[extensionBgColorKey[key]] as string;
 }
 
 export function getFibonacciHistoryModeLabel(mode: number): string {
@@ -372,6 +422,22 @@ function createEmptyExtensionData(candleData: CandleData[]): Record<ExtensionLev
     };
 }
 
+function buildZoneBand(
+    candleData: CandleData[],
+    startIndex: number,
+    endIndex: number,
+    topPrice: number,
+    bottomPrice: number,
+): FibonacciZoneBand {
+    const data: Array<LineData<Time> | WhitespaceData<Time>> = candleData.map((candle, i) => {
+        if (i >= startIndex && i <= endIndex) {
+            return { time: candle.time as unknown as Time, value: topPrice };
+        }
+        return { time: candle.time as unknown as Time };
+    });
+    return { topPrice, bottomPrice, data };
+}
+
 function getVisibleSegments(segments: FibonacciSegment[], mode: FibonacciHistoryMode): FibonacciSegment[] {
     if (mode === 0) return [];
     if (mode === 1) {
@@ -452,6 +518,18 @@ export function buildFibonacciRenderData(
         : [];
 
     const retracementData = createEmptyRetracementData(candleData);
+    const retracementZoneBands: Record<RetracementBandKey, FibonacciZoneBand[]> = {
+        zone0_236: [], zone236_382: [], zone382_5: [],
+        zone5_618: [], zone618_786: [], zone786_1: [],
+    };
+    const retracementBandPairs: Array<[RetracementBandKey, RetracementLevelKey, RetracementLevelKey]> = [
+        ['zone0_236', 'level0', 'level236'],
+        ['zone236_382', 'level236', 'level382'],
+        ['zone382_5', 'level382', 'level5'],
+        ['zone5_618', 'level5', 'level618'],
+        ['zone618_786', 'level618', 'level786'],
+        ['zone786_1', 'level786', 'level1'],
+    ];
     if (config.showRetracement) {
         visibleSegments.forEach(segment => {
             for (const key of fibonacciRetracementLevelOrder) {
@@ -464,10 +542,28 @@ export function buildFibonacciRenderData(
                     };
                 }
             }
+
+            for (const [bandKey, lowKey, highKey] of retracementBandPairs) {
+                const top = Math.max(segment.levels[lowKey], segment.levels[highKey]);
+                const bottom = Math.min(segment.levels[lowKey], segment.levels[highKey]);
+                retracementZoneBands[bandKey].push(
+                    buildZoneBand(candleData, segment.startIndex, segment.endIndex, top, bottom),
+                );
+            }
         });
     }
 
     const extensionData = createEmptyExtensionData(candleData);
+    const extensionZoneBands: Record<ExtensionBandKey, FibonacciZoneBand[]> = {
+        zone1272_1414: [], zone1414_1618: [],
+        zone1618_2: [], zone2_2618: [],
+    };
+    const extensionBandPairs: Array<[ExtensionBandKey, ExtensionLevelKey, ExtensionLevelKey]> = [
+        ['zone1272_1414', 'ext1272', 'ext1414'],
+        ['zone1414_1618', 'ext1414', 'ext1618'],
+        ['zone1618_2', 'ext1618', 'ext2'],
+        ['zone2_2618', 'ext2', 'ext2618'],
+    ];
     if (config.showExtension) {
         visibleExtensions.forEach((extension, index) => {
             const startIndex = Math.max(0, Math.min(candleData.length - 1, extension.anchorIndex));
@@ -484,6 +580,14 @@ export function buildFibonacciRenderData(
                         value,
                     };
                 }
+            }
+
+            for (const [bandKey, lowKey, highKey] of extensionBandPairs) {
+                const top = Math.max(extension.levels[lowKey], extension.levels[highKey]);
+                const bottom = Math.min(extension.levels[lowKey], extension.levels[highKey]);
+                extensionZoneBands[bandKey].push(
+                    buildZoneBand(candleData, startIndex, endIndex, top, bottom),
+                );
             }
         });
     }
@@ -510,5 +614,5 @@ export function buildFibonacciRenderData(
         });
     }
 
-    return { supertrendData, retracementData, extensionData, trendlineData };
+    return { supertrendData, retracementData, extensionData, retracementZoneBands, extensionZoneBands, trendlineData };
 }
