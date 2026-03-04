@@ -326,17 +326,20 @@ function createFibonacciSeriesExtras(
         extras.push(series);
     }
 
-    const trendlineSeries = chart.addSeries(LineSeries, {
-        color: fibConfig.level0LineColor,
-        lineWidth: 1,
-        lineStyle: LineStyle.Dashed,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
-    });
-    trendlineSeries.setData(render.trendlineData as any);
-    trendlineSeries.applyOptions({ visible: showTrendline });
-    extras.push(trendlineSeries);
+    // Trendline series (one per visible segment — separate series so they can't connect)
+    for (const segData of render.trendlineSegments) {
+        const series = chart.addSeries(LineSeries, {
+            color: fibConfig.level0LineColor,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+        });
+        series.setData(segData as any);
+        series.applyOptions({ visible: showTrendline });
+        extras.push(series);
+    }
 
     return extras;
 }
@@ -436,7 +439,7 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
 
                 const extras = createFibonacciSeriesExtras(chart, render, fibConfig, showRetracement, showExtension, showTrendline);
                 overlaySeriesRef.current.set(overlay.id, { primary: supertrendSeries, extras });
-                const data = [...computed.segments, ...computed.extensions];
+                const data = computed.segments;
                 dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id: overlay.id, config: overlay.config, data });
             }
         });
@@ -555,7 +558,7 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
                     primary: supertrendSeries,
                     extras,
                 });
-                data = [...computed.segments, ...computed.extensions];
+                data = computed.segments;
             }
 
             dispatch({ type: 'OVERLAY_ADDED', overlay: { id, type, visible: true, config, data } });
@@ -692,7 +695,7 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
                 targetEntry.extras = createFibonacciSeriesExtras(chart, render, fibConfig, showRetracement, showExtension, showTrendline);
             }
 
-            dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data: [...computed.segments, ...computed.extensions] });
+            dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data: computed.segments });
         }
     }, [candleData]);
 
@@ -723,31 +726,48 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
                 const showTrendline = newVisible && config.historyMode !== 0 && config.showTrendline;
                 entry.primary.applyOptions({ visible: newVisible && config.trendOn });
 
-                // Zone series have dynamic count; line series are the last 13 entries (7 retracement + 5 extension + 1 trendline)
-                const fixedLineCount = fibonacciRetracementLevelOrder.length + fibonacciExtensionLevelOrder.length + 1;
-                const zoneCount = entry.extras.length - fixedLineCount;
-                const lineStart = zoneCount;
+                // Extras layout: [zone BaselineSeries...] [12 level LineSeries] [N trendline LineSeries]
+                // Trendline series come after level series; zone series come before levels.
+                // We need the zone count. Since zones are pushed first and we know the level+trendline count
+                // structure, we note: total = zoneCount + 12 + trendlineCount.
+                // But we don't know trendlineCount here. However, we know the pattern:
+                //   - Zones are BaselineSeries (have baseValue option)
+                //   - Everything after zones is LineSeries
+                // Count zones by finding where LineSeries start:
+                let zoneEnd = 0;
+                while (zoneEnd < entry.extras.length) {
+                    // LineSeries level lines have lineStyle property set, zones don't
+                    // Simplest: zones are first, and there are exactly (total - levelCount - trendlineCount) of them
+                    // Since we can't distinguish at runtime, just count all non-LineSeries:
+                    try {
+                        const opts = (entry.extras[zoneEnd] as any).options();
+                        if (opts.lineStyle !== undefined) break; // This is a LineSeries (level or trendline)
+                    } catch { break; }
+                    zoneEnd++;
+                }
 
-                // Toggle zone series visibility
-                for (let i = 0; i < zoneCount; i++) {
+                // Toggle zone series
+                for (let i = 0; i < zoneEnd; i++) {
                     entry.extras[i]?.applyOptions({ visible: showRetracement || showExtension });
                 }
 
-                // Toggle retracement line series
+                // Toggle retracement level lines (7)
                 fibonacciRetracementLevelOrder.forEach((levelKey, index) => {
                     const levelVisible = showRetracement && (levelKey !== 'level5' || config.showMidline);
-                    entry.extras[lineStart + index]?.applyOptions({ visible: levelVisible });
+                    entry.extras[zoneEnd + index]?.applyOptions({ visible: levelVisible });
                 });
 
-                // Toggle extension line series
-                const extLineStart = lineStart + fibonacciRetracementLevelOrder.length;
+                // Toggle extension level lines (5)
+                const extStart = zoneEnd + fibonacciRetracementLevelOrder.length;
                 fibonacciExtensionLevelOrder.forEach((_, index) => {
-                    entry.extras[extLineStart + index]?.applyOptions({ visible: showExtension });
+                    entry.extras[extStart + index]?.applyOptions({ visible: showExtension });
                 });
 
-                // Toggle trendline
-                const trendlineIdx = entry.extras.length - 1;
-                entry.extras[trendlineIdx]?.applyOptions({ visible: showTrendline });
+                // Toggle trendline series (all remaining)
+                const trendStart = extStart + fibonacciExtensionLevelOrder.length;
+                for (let i = trendStart; i < entry.extras.length; i++) {
+                    entry.extras[i]?.applyOptions({ visible: showTrendline });
+                }
             }
 
             if (overlay.type === 'volume' && newVisible) {

@@ -64,7 +64,7 @@ const EXTENSION_RATIOS: Record<ExtensionLevelKey, number> = {
     ext2618: 2.618,
 };
 
-const RETRACEMENT_REFERENCE_LEVELS = [0.236, 0.382, 0.5, 0.618, 0.786, 1] as const;
+
 
 export const FibonacciMeta = [
     { key: 'trendOn', label: 'Show Supertrend', group: 'Input', type: 'boolean', default: true },
@@ -77,7 +77,7 @@ export const FibonacciMeta = [
         label: 'Historical Ranges',
         group: 'Input',
         type: 'select',
-        default: 1,
+        default: 2,
         options: [
             { value: 0, label: 'None' },
             { value: 1, label: 'Last Trend Only' },
@@ -145,14 +145,7 @@ export type FibonacciSegment = {
     high: number;
     highIndex: number;
     levels: FibonacciRetracementLevels;
-};
-
-export type FibonacciExtensionLeg = {
-    trend: TrendDirection;
-    anchorIndex: number;
-    retracementRatio: number;
-    nearestRetracementLevel: number;
-    levels: FibonacciExtensionLevels;
+    extensionLevels: FibonacciExtensionLevels;
 };
 
 export type FibonacciComputation = {
@@ -162,7 +155,6 @@ export type FibonacciComputation = {
         direction: TrendDirection;
     }>;
     segments: FibonacciSegment[];
-    extensions: FibonacciExtensionLeg[];
 };
 
 type RenderPoint = LineData<Time> | WhitespaceData<Time>;
@@ -179,7 +171,7 @@ export type FibonacciRenderData = {
     extensionData: Record<ExtensionLevelKey, RenderPoint[]>;
     retracementZoneBands: Record<RetracementBandKey, FibonacciZoneBand[]>;
     extensionZoneBands: Record<ExtensionBandKey, FibonacciZoneBand[]>;
-    trendlineData: RenderPoint[];
+    trendlineSegments: LineData<Time>[][];
 };
 
 const retracementLineColorKey: Record<RetracementLevelKey, keyof FibonacciConfig> = {
@@ -349,6 +341,7 @@ function buildSegment(
 
     const level0 = trend === 1 ? low : high;
     const level1 = trend === 1 ? high : low;
+    const range = high - low;
 
     return {
         trend,
@@ -359,46 +352,17 @@ function buildSegment(
         high,
         highIndex,
         levels: buildRetracementLevels(level0, level1),
+        extensionLevels: {
+            ext1272: low + range * EXTENSION_RATIOS.ext1272,
+            ext1414: low + range * EXTENSION_RATIOS.ext1414,
+            ext1618: low + range * EXTENSION_RATIOS.ext1618,
+            ext2: low + range * EXTENSION_RATIOS.ext2,
+            ext2618: low + range * EXTENSION_RATIOS.ext2618,
+        },
     };
 }
 
-function getNearestRetracementLevel(value: number): number {
-    return RETRACEMENT_REFERENCE_LEVELS.reduce((best, level) => (
-        Math.abs(level - value) < Math.abs(best - value) ? level : best
-    ), RETRACEMENT_REFERENCE_LEVELS[0]);
-}
 
-function buildExtensionLeg(first: FibonacciSegment, second: FibonacciSegment): FibonacciExtensionLeg | null {
-    if (first.trend === second.trend) return null;
-
-    const trend = first.trend;
-    const impulseStart = first.levels.level0;
-    const impulseEnd = first.levels.level1;
-    const move = Math.abs(impulseEnd - impulseStart);
-    if (move <= Number.EPSILON) return null;
-
-    const retracementEndPrice = trend === 1 ? second.low : second.high;
-    const anchorIndex = trend === 1 ? second.lowIndex : second.highIndex;
-    const retracementRatio = trend === 1
-        ? (impulseEnd - retracementEndPrice) / move
-        : (retracementEndPrice - impulseEnd) / move;
-
-    const levels: FibonacciExtensionLevels = {
-        ext1272: trend === 1 ? retracementEndPrice + move * EXTENSION_RATIOS.ext1272 : retracementEndPrice - move * EXTENSION_RATIOS.ext1272,
-        ext1414: trend === 1 ? retracementEndPrice + move * EXTENSION_RATIOS.ext1414 : retracementEndPrice - move * EXTENSION_RATIOS.ext1414,
-        ext1618: trend === 1 ? retracementEndPrice + move * EXTENSION_RATIOS.ext1618 : retracementEndPrice - move * EXTENSION_RATIOS.ext1618,
-        ext2: trend === 1 ? retracementEndPrice + move * EXTENSION_RATIOS.ext2 : retracementEndPrice - move * EXTENSION_RATIOS.ext2,
-        ext2618: trend === 1 ? retracementEndPrice + move * EXTENSION_RATIOS.ext2618 : retracementEndPrice - move * EXTENSION_RATIOS.ext2618,
-    };
-
-    return {
-        trend,
-        anchorIndex,
-        retracementRatio,
-        nearestRetracementLevel: getNearestRetracementLevel(retracementRatio),
-        levels,
-    };
-}
 
 function createEmptyRetracementData(candleData: CandleData[]): Record<RetracementLevelKey, RenderPoint[]> {
     return {
@@ -446,20 +410,14 @@ function getVisibleSegments(segments: FibonacciSegment[], mode: FibonacciHistory
     return segments;
 }
 
-function getVisibleExtensions(extensions: FibonacciExtensionLeg[], mode: FibonacciHistoryMode): FibonacciExtensionLeg[] {
-    if (mode === 0) return [];
-    if (mode === 1) {
-        return extensions.length > 0 ? [extensions[extensions.length - 1]] : [];
-    }
-    return extensions;
-}
+
 
 export function computeFibonacciData(
     candleData: CandleData[],
     config: FibonacciConfig = defaultFibonacciConfig,
 ): FibonacciComputation {
     if (candleData.length === 0) {
-        return { supertrend: [], segments: [], extensions: [] };
+        return { supertrend: [], segments: [] };
     }
 
     const trendFactor = Math.max(0.1, config.trendFactor);
@@ -481,12 +439,6 @@ export function computeFibonacciData(
         segmentStart = i;
     }
 
-    const extensions: FibonacciExtensionLeg[] = [];
-    for (let i = 0; i < segments.length - 1; i++) {
-        const leg = buildExtensionLeg(segments[i], segments[i + 1]);
-        if (leg) extensions.push(leg);
-    }
-
     return {
         supertrend: candleData.map((candle, index) => ({
             time: candle.time,
@@ -494,7 +446,6 @@ export function computeFibonacciData(
             direction: direction[index],
         })),
         segments,
-        extensions,
     };
 }
 
@@ -505,9 +456,6 @@ export function buildFibonacciRenderData(
 ): FibonacciRenderData {
     const historyMode = normalizeHistoryMode(config.historyMode);
     const visibleSegments = getVisibleSegments(computed.segments, historyMode);
-    const visibleExtensions = getVisibleExtensions(computed.extensions, historyMode)
-        .slice()
-        .sort((a, b) => a.anchorIndex - b.anchorIndex);
 
     const supertrendData: LineData<Time>[] = config.trendOn
         ? computed.supertrend.map(point => ({
@@ -530,28 +478,6 @@ export function buildFibonacciRenderData(
         ['zone618_786', 'level618', 'level786'],
         ['zone786_1', 'level786', 'level1'],
     ];
-    if (config.showRetracement) {
-        visibleSegments.forEach(segment => {
-            for (const key of fibonacciRetracementLevelOrder) {
-                if (key === 'level5' && !config.showMidline) continue;
-                const level = segment.levels[key];
-                for (let i = segment.startIndex; i <= segment.endIndex; i++) {
-                    retracementData[key][i] = {
-                        time: candleData[i].time as unknown as Time,
-                        value: level,
-                    };
-                }
-            }
-
-            for (const [bandKey, lowKey, highKey] of retracementBandPairs) {
-                const top = Math.max(segment.levels[lowKey], segment.levels[highKey]);
-                const bottom = Math.min(segment.levels[lowKey], segment.levels[highKey]);
-                retracementZoneBands[bandKey].push(
-                    buildZoneBand(candleData, segment.startIndex, segment.endIndex, top, bottom),
-                );
-            }
-        });
-    }
 
     const extensionData = createEmptyExtensionData(candleData);
     const extensionZoneBands: Record<ExtensionBandKey, FibonacciZoneBand[]> = {
@@ -564,55 +490,153 @@ export function buildFibonacciRenderData(
         ['zone1618_2', 'ext1618', 'ext2'],
         ['zone2_2618', 'ext2', 'ext2618'],
     ];
-    if (config.showExtension) {
-        visibleExtensions.forEach((extension, index) => {
-            const startIndex = Math.max(0, Math.min(candleData.length - 1, extension.anchorIndex));
-            const endIndex = index < visibleExtensions.length - 1
-                ? Math.min(candleData.length - 1, visibleExtensions[index + 1].anchorIndex - 1)
-                : candleData.length - 1;
-            if (startIndex > endIndex) return;
+    const trendlineSegments: LineData<Time>[][] = [];
 
-            for (const key of fibonacciExtensionLevelOrder) {
-                const value = extension.levels[key];
-                for (let i = startIndex; i <= endIndex; i++) {
-                    extensionData[key][i] = {
-                        time: candleData[i].time as unknown as Time,
-                        value,
-                    };
+    if (config.showExtension && computed.segments.length >= 2) {
+        // ── PAIR-BASED RENDERING (extension mode) ──
+        // Each pair = (impulse, correction). Impulse defines the fib range (0%=low, 100%=high).
+        // Levels are drawn from correction.startIndex to end of data (or next pair's start).
+        // Trendlines show the zigzag: impulse diagonal + correction diagonal.
+        const allSegments = computed.segments;
+        type FibPair = { impulse: FibonacciSegment; correction: FibonacciSegment };
+        const allPairs: FibPair[] = [];
+        for (let i = 0; i < allSegments.length - 1; i++) {
+            allPairs.push({ impulse: allSegments[i], correction: allSegments[i + 1] });
+        }
+        const visiblePairs = historyMode === 0 ? []
+            : historyMode === 1 ? (allPairs.length > 0 ? [allPairs[allPairs.length - 1]] : [])
+                : allPairs;
+
+        visiblePairs.forEach((pair, pairIndex) => {
+            const { impulse, correction } = pair;
+            const range = impulse.high - impulse.low;
+            if (range <= Number.EPSILON) return;
+
+            // Levels are always low→high regardless of trend direction
+            const levels: FibonacciRetracementLevels = {
+                level0: impulse.low,
+                level236: impulse.low + range * RETRACEMENT_RATIOS.level236,
+                level382: impulse.low + range * RETRACEMENT_RATIOS.level382,
+                level5: impulse.low + range * RETRACEMENT_RATIOS.level5,
+                level618: impulse.low + range * RETRACEMENT_RATIOS.level618,
+                level786: impulse.low + range * RETRACEMENT_RATIOS.level786,
+                level1: impulse.high,
+            };
+            const extLevels: FibonacciExtensionLevels = {
+                ext1272: impulse.low + range * EXTENSION_RATIOS.ext1272,
+                ext1414: impulse.low + range * EXTENSION_RATIOS.ext1414,
+                ext1618: impulse.low + range * EXTENSION_RATIOS.ext1618,
+                ext2: impulse.low + range * EXTENSION_RATIOS.ext2,
+                ext2618: impulse.low + range * EXTENSION_RATIOS.ext2618,
+            };
+
+            // Draw from correction start to end of data (or next pair's correction start)
+            const drawStart = correction.startIndex;
+            const drawEnd = pairIndex < visiblePairs.length - 1
+                ? visiblePairs[pairIndex + 1].correction.startIndex - 1
+                : candleData.length - 1;
+
+            // Retracement lines + zones
+            if (config.showRetracement) {
+                for (const key of fibonacciRetracementLevelOrder) {
+                    if (key === 'level5' && !config.showMidline) continue;
+                    const value = levels[key];
+                    for (let i = drawStart; i <= drawEnd; i++) {
+                        retracementData[key][i] = { time: candleData[i].time as unknown as Time, value };
+                    }
+                }
+                for (const [bandKey, lowKey, highKey] of retracementBandPairs) {
+                    const top = Math.max(levels[lowKey], levels[highKey]);
+                    const bottom = Math.min(levels[lowKey], levels[highKey]);
+                    retracementZoneBands[bandKey].push(buildZoneBand(candleData, drawStart, drawEnd, top, bottom));
                 }
             }
 
+            // Extension lines + zones
+            for (const key of fibonacciExtensionLevelOrder) {
+                const value = extLevels[key];
+                for (let i = drawStart; i <= drawEnd; i++) {
+                    extensionData[key][i] = { time: candleData[i].time as unknown as Time, value };
+                }
+            }
             for (const [bandKey, lowKey, highKey] of extensionBandPairs) {
-                const top = Math.max(extension.levels[lowKey], extension.levels[highKey]);
-                const bottom = Math.min(extension.levels[lowKey], extension.levels[highKey]);
-                extensionZoneBands[bandKey].push(
-                    buildZoneBand(candleData, startIndex, endIndex, top, bottom),
-                );
+                const top = Math.max(extLevels[lowKey], extLevels[highKey]);
+                const bottom = Math.min(extLevels[lowKey], extLevels[highKey]);
+                extensionZoneBands[bandKey].push(buildZoneBand(candleData, drawStart, drawEnd, top, bottom));
+            }
+
+            // Trendlines: 3-point zigzag A→B→C (exactly 2 connected lines)
+            if (config.showTrendline) {
+                const isBullishImpulse = impulse.trend === -1;
+                const aIdx = isBullishImpulse ? impulse.lowIndex : impulse.highIndex;
+                const aVal = isBullishImpulse ? impulse.low : impulse.high;
+                const bIdx = isBullishImpulse ? impulse.highIndex : impulse.lowIndex;
+                const bVal = isBullishImpulse ? impulse.high : impulse.low;
+                const cIdx = isBullishImpulse ? correction.lowIndex : correction.highIndex;
+                const cVal = isBullishImpulse ? correction.low : correction.high;
+
+                const zigzag: LineData<Time>[] = [];
+                // Leg 1: A→B
+                if (bIdx > aIdx) {
+                    const spanAB = bIdx - aIdx;
+                    for (let i = aIdx; i <= bIdx; i++) {
+                        const t = (i - aIdx) / spanAB;
+                        zigzag.push({ time: candleData[i].time as unknown as Time, value: aVal + (bVal - aVal) * t });
+                    }
+                }
+                // Leg 2: B→C (skip bIdx to avoid duplicate)
+                if (cIdx > bIdx) {
+                    const spanBC = cIdx - bIdx;
+                    for (let i = bIdx + 1; i <= cIdx; i++) {
+                        const t = (i - bIdx) / spanBC;
+                        zigzag.push({ time: candleData[i].time as unknown as Time, value: bVal + (cVal - bVal) * t });
+                    }
+                }
+                if (zigzag.length > 0) trendlineSegments.push(zigzag);
             }
         });
+    } else {
+        // ── PER-SEGMENT RENDERING (retracement only, no extension) ──
+        if (config.showRetracement || config.showTrendline) {
+            visibleSegments.forEach((segment, segIdx) => {
+                // Clip 1 index at inner boundaries to prevent diagonal connections between segments
+                const clipStart = segIdx > 0 ? segment.startIndex : segment.startIndex;
+                const clipEnd = segIdx < visibleSegments.length - 1 ? segment.endIndex : segment.endIndex;
+                if (clipStart > clipEnd) return;
+
+                if (config.showRetracement) {
+                    for (const key of fibonacciRetracementLevelOrder) {
+                        if (key === 'level5' && !config.showMidline) continue;
+                        const level = segment.levels[key];
+                        for (let i = clipStart; i <= clipEnd; i++) {
+                            retracementData[key][i] = { time: candleData[i].time as unknown as Time, value: level };
+                        }
+                    }
+                    for (const [bandKey, lowKey, highKey] of retracementBandPairs) {
+                        const top = Math.max(segment.levels[lowKey], segment.levels[highKey]);
+                        const bottom = Math.min(segment.levels[lowKey], segment.levels[highKey]);
+                        retracementZoneBands[bandKey].push(buildZoneBand(candleData, clipStart, clipEnd, top, bottom));
+                    }
+                }
+
+                if (config.showTrendline) {
+                    if (segment.lowIndex !== segment.highIndex) {
+                        const sIdx = Math.min(segment.lowIndex, segment.highIndex);
+                        const eIdx = Math.max(segment.lowIndex, segment.highIndex);
+                        const sVal = sIdx === segment.lowIndex ? segment.low : segment.high;
+                        const eVal = eIdx === segment.lowIndex ? segment.low : segment.high;
+                        const span = eIdx - sIdx;
+                        const segLine: LineData<Time>[] = [];
+                        for (let i = sIdx; i <= eIdx; i++) {
+                            const t = span === 0 ? 0 : (i - sIdx) / span;
+                            segLine.push({ time: candleData[i].time as unknown as Time, value: sVal + (eVal - sVal) * t });
+                        }
+                        trendlineSegments.push(segLine);
+                    }
+                }
+            });
+        }
     }
 
-    const trendlineData: RenderPoint[] = candleData.map(candle => ({ time: candle.time as unknown as Time }));
-    if (config.showTrendline) {
-        visibleSegments.forEach(segment => {
-            if (segment.lowIndex === segment.highIndex) return;
-
-            const startIndex = Math.min(segment.lowIndex, segment.highIndex);
-            const endIndex = Math.max(segment.lowIndex, segment.highIndex);
-            const startValue = startIndex === segment.lowIndex ? segment.low : segment.high;
-            const endValue = endIndex === segment.lowIndex ? segment.low : segment.high;
-            const span = endIndex - startIndex;
-
-            for (let i = startIndex; i <= endIndex; i++) {
-                const t = span === 0 ? 0 : (i - startIndex) / span;
-                const value = startValue + (endValue - startValue) * t;
-                trendlineData[i] = {
-                    time: candleData[i].time as unknown as Time,
-                    value,
-                };
-            }
-        });
-    }
-
-    return { supertrendData, retracementData, extensionData, retracementZoneBands, extensionZoneBands, trendlineData };
+    return { supertrendData, retracementData, extensionData, retracementZoneBands, extensionZoneBands, trendlineSegments };
 }
