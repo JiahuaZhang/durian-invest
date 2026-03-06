@@ -1,6 +1,11 @@
 import { BaselineSeries, CandlestickSeries, createChart, ISeriesApi, LineSeries, LineStyle } from 'lightweight-charts';
 import { createContext, useCallback, useContext, useMemo, useReducer, useRef, type ReactNode } from 'react';
 import {
+    defaultFibExtConfig,
+    type FibExtConfig
+} from '../plugin/fibonacci-ext/fibonacci-ext';
+import { fibExtIndicator } from '../plugin/fibonacci-ext/fibonacci-ext.indicator';
+import {
     buildFibonacciRenderData,
     computeFibonacciData,
     defaultFibonacciConfig,
@@ -11,26 +16,12 @@ import {
     type FibonacciConfig,
     type FibonacciRenderData,
 } from '../plugin/fibonacci/fibonacci';
-import {
-    buildFibExtRenderData,
-    computeFibExtData,
-    defaultFibExtConfig,
-    fibExtExtensionBandOrder,
-    fibExtExtensionLevelOrder,
-    fibExtRetracementBandOrder,
-    fibExtRetracementLevelOrder,
-    getFibExtExtensionBgColor,
-    getFibExtExtensionLineColor,
-    getFibExtRetracementBgColor,
-    getFibExtRetracementLineColor,
-    type FibExtConfig,
-    type FibExtRenderData,
-} from '../plugin/fibonacci-ext/fibonacci-ext';
-import { defaultMACDConfig, type MACDConfig } from '../plugin/macd/macd';
+import { defaultMACDConfig } from '../plugin/macd/macd';
 import { computeMarketBiasData, defaultMarketBiasConfig, type MarketBiasConfig } from '../plugin/market-bias/market-bias';
 import { computeMAData, createMASeries, getDefaultMAConfig, type MAConfig } from '../plugin/moving-average/ma';
 import { defaultRSIConfig, type RSIConfig } from '../plugin/relative-strength-index/rsi';
 import { computeVolumeData, createVolumeSeries, defaultVolumeConfig, type VolumeConfig } from '../plugin/volume/volume';
+import { MACDConfig } from './ChartContext';
 import { useCandleData } from './ChartDataContext';
 
 // Re-export CandleData types
@@ -44,8 +35,8 @@ export type OverlayType = 'volume' | 'sma' | 'ema' | 'market-bias' | 'fibonacci'
 export type IndicatorType = 'macd' | 'rsi';
 
 // Re-export plugin config types for convenience
-export type { FibonacciConfig } from '../plugin/fibonacci/fibonacci';
 export type { FibExtConfig } from '../plugin/fibonacci-ext/fibonacci-ext';
+export type { FibonacciConfig } from '../plugin/fibonacci/fibonacci';
 export type { MACDConfig } from '../plugin/macd/macd';
 export type { MarketBiasConfig } from '../plugin/market-bias/market-bias';
 export type { RSIConfig } from '../plugin/relative-strength-index/rsi';
@@ -249,100 +240,6 @@ const ChartContext = createContext<ChartContextType | null>(null);
 let idCounter = 0;
 const generateId = (prefix: string) => `${prefix}-${++idCounter}`;
 
-
-
-function createFibExtSeriesExtras(
-    chart: ReturnType<typeof createChart>,
-    render: FibExtRenderData,
-    config: FibExtConfig,
-    showRetracement: boolean,
-    showExtension: boolean,
-    showTrendline: boolean,
-): ISeriesApi<any>[] {
-    const fibLineWidth = Math.min(4, Math.max(1, Math.round(config.lineWidth))) as 1 | 2 | 3 | 4;
-    const extras: ISeriesApi<any>[] = [];
-
-    // Retracement zone bands
-    for (const bandKey of fibExtRetracementBandOrder) {
-        const color = getFibExtRetracementBgColor(config, bandKey);
-        for (const band of render.retracementZoneBands[bandKey]) {
-            const series = chart.addSeries(BaselineSeries, {
-                baseValue: { type: 'price' as const, price: band.bottomPrice },
-                topFillColor1: color, topFillColor2: color,
-                topLineColor: 'transparent',
-                bottomFillColor1: 'transparent', bottomFillColor2: 'transparent',
-                bottomLineColor: 'transparent',
-                lineWidth: 1, lineVisible: false, crosshairMarkerVisible: false,
-                priceLineVisible: false, lastValueVisible: false,
-            });
-            series.setData(band.data as any);
-            series.applyOptions({ visible: showRetracement });
-            extras.push(series);
-        }
-    }
-
-    // Extension zone bands
-    for (const bandKey of fibExtExtensionBandOrder) {
-        const color = getFibExtExtensionBgColor(config, bandKey);
-        for (const band of render.extensionZoneBands[bandKey]) {
-            const series = chart.addSeries(BaselineSeries, {
-                baseValue: { type: 'price' as const, price: band.bottomPrice },
-                topFillColor1: color, topFillColor2: color,
-                topLineColor: 'transparent',
-                bottomFillColor1: 'transparent', bottomFillColor2: 'transparent',
-                bottomLineColor: 'transparent',
-                lineWidth: 1, lineVisible: false, crosshairMarkerVisible: false,
-                priceLineVisible: false, lastValueVisible: false,
-            });
-            series.setData(band.data as any);
-            series.applyOptions({ visible: showExtension });
-            extras.push(series);
-        }
-    }
-
-    // Retracement level lines (7)
-    for (const levelKey of fibExtRetracementLevelOrder) {
-        const series = chart.addSeries(LineSeries, {
-            color: getFibExtRetracementLineColor(config, levelKey),
-            lineWidth: fibLineWidth,
-            lineStyle: levelKey === 'level5' ? LineStyle.Dotted : LineStyle.Solid,
-            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-        });
-        series.setData(render.retracementData[levelKey] as any);
-        const levelVisible = showRetracement && (levelKey !== 'level5' || config.showMidline);
-        series.applyOptions({ visible: levelVisible });
-        extras.push(series);
-    }
-
-    // Extension level lines (5)
-    for (const levelKey of fibExtExtensionLevelOrder) {
-        const series = chart.addSeries(LineSeries, {
-            color: getFibExtExtensionLineColor(config, levelKey),
-            lineWidth: fibLineWidth,
-            lineStyle: LineStyle.Dashed,
-            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-        });
-        series.setData(render.extensionData[levelKey] as any);
-        series.applyOptions({ visible: showExtension });
-        extras.push(series);
-    }
-
-    // Trendline series
-    for (const segData of render.trendlineSegments) {
-        const series = chart.addSeries(LineSeries, {
-            color: config.level0LineColor,
-            lineWidth: 1,
-            lineStyle: LineStyle.Dashed,
-            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-        });
-        series.setData(segData as any);
-        series.applyOptions({ visible: showTrendline });
-        extras.push(series);
-    }
-
-    return extras;
-}
-
 function createFibonacciSeriesExtras(
     chart: ReturnType<typeof createChart>,
     render: FibonacciRenderData,
@@ -510,21 +407,9 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
             }
             if (overlay.type === 'fibonacci-ext') {
                 const feConfig = overlay.config as FibExtConfig;
-                const computed = computeFibExtData(candleData, feConfig);
-                const render = buildFibExtRenderData(candleData, computed, feConfig);
-                const showRetracement = overlay.visible && feConfig.showRetracement;
-                const showExtension = overlay.visible && feConfig.showExtension;
-                const showTrendline = overlay.visible && feConfig.showTrendline;
-
-                // Primary is a dummy invisible series (no supertrend for this plugin)
-                const dummySeries = chart.addSeries(LineSeries, {
-                    lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-                });
-                dummySeries.applyOptions({ visible: false });
-
-                const extras = createFibExtSeriesExtras(chart, render, feConfig, showRetracement, showExtension, showTrendline);
-                overlaySeriesRef.current.set(overlay.id, { primary: dummySeries, extras });
-                dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id: overlay.id, config: overlay.config, data: computed.zigzagPivots });
+                const { entry, data } = fibExtIndicator.add(chart, candleData, feConfig, overlay.visible);
+                overlaySeriesRef.current.set(overlay.id, entry);
+                dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id: overlay.id, config: overlay.config, data });
             }
         });
     }, [candleData]);
@@ -652,20 +537,9 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
             let data: any[] = [];
 
             if (chart) {
-                const computed = computeFibExtData(candleData, config);
-                const render = buildFibExtRenderData(candleData, computed, config);
-                const showRetracement = config.showRetracement;
-                const showExtension = config.showExtension;
-                const showTrendline = config.showTrendline;
-
-                const dummySeries = chart.addSeries(LineSeries, {
-                    lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-                });
-                dummySeries.applyOptions({ visible: false });
-
-                const extras = createFibExtSeriesExtras(chart, render, config, showRetracement, showExtension, showTrendline);
-                overlaySeriesRef.current.set(id, { primary: dummySeries, extras });
-                data = computed.zigzagPivots;
+                const result = fibExtIndicator.add(chart, candleData, config);
+                overlaySeriesRef.current.set(id, result.entry);
+                data = result.data;
             }
 
             dispatch({ type: 'OVERLAY_ADDED', overlay: { id, type, visible: true, config, data } });
@@ -806,32 +680,21 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
 
         if (overlay.type === 'fibonacci-ext') {
             const feConfig = newConfig as FibExtConfig;
-            const computed = computeFibExtData(candleData, feConfig);
-            const render = buildFibExtRenderData(candleData, computed, feConfig);
-            const showRetracement = overlay.visible && feConfig.showRetracement;
-            const showExtension = overlay.visible && feConfig.showExtension;
-            const showTrendline = overlay.visible && feConfig.showTrendline;
-
             const chart = chartRef.current;
             let targetEntry = entry;
 
             if (!targetEntry && chart) {
-                const dummySeries = chart.addSeries(LineSeries, {
-                    lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-                });
-                dummySeries.applyOptions({ visible: false });
-                targetEntry = { primary: dummySeries, extras: [] };
+                const result = fibExtIndicator.add(chart, candleData, feConfig, overlay.visible);
+                targetEntry = result.entry;
                 overlaySeriesRef.current.set(id, targetEntry);
             }
 
             if (targetEntry && chart) {
-                for (const s of targetEntry.extras) {
-                    try { chart.removeSeries(s); } catch { /* already removed */ }
-                }
-                targetEntry.extras = createFibExtSeriesExtras(chart, render, feConfig, showRetracement, showExtension, showTrendline);
+                const data = fibExtIndicator.update(chart, targetEntry, candleData, feConfig, overlay.visible);
+                dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data });
+            } else {
+                dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data: [] });
             }
-
-            dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data: computed.zigzagPivots });
         }
     }, [candleData]);
 
@@ -890,46 +753,7 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
             }
 
             if (overlay.type === 'fibonacci-ext') {
-                const config = overlay.config as FibExtConfig;
-                const showRetracement = newVisible && config.showRetracement;
-                const showExtension = newVisible && config.showExtension;
-                const showTrendline = newVisible && config.showTrendline;
-
-                // Primary is dummy (invisible)
-                entry.primary.applyOptions({ visible: false });
-
-                // Extras layout: [ret zone bands...] [ext zone bands...] [7 ret lines] [5 ext lines] [N trendlines]
-                let zoneEnd = 0;
-                while (zoneEnd < entry.extras.length) {
-                    try {
-                        const opts = (entry.extras[zoneEnd] as any).options();
-                        if (opts.lineStyle !== undefined) break;
-                    } catch { break; }
-                    zoneEnd++;
-                }
-
-                // Toggle zone series
-                for (let i = 0; i < zoneEnd; i++) {
-                    entry.extras[i]?.applyOptions({ visible: showRetracement || showExtension });
-                }
-
-                // Toggle retracement level lines (7)
-                fibExtRetracementLevelOrder.forEach((levelKey, index) => {
-                    const levelVisible = showRetracement && (levelKey !== 'level5' || config.showMidline);
-                    entry.extras[zoneEnd + index]?.applyOptions({ visible: levelVisible });
-                });
-
-                // Toggle extension level lines (5)
-                const extStart = zoneEnd + fibExtRetracementLevelOrder.length;
-                fibExtExtensionLevelOrder.forEach((_, index) => {
-                    entry.extras[extStart + index]?.applyOptions({ visible: showExtension });
-                });
-
-                // Toggle trendline series (all remaining)
-                const trendStart = extStart + fibExtExtensionLevelOrder.length;
-                for (let i = trendStart; i < entry.extras.length; i++) {
-                    entry.extras[i]?.applyOptions({ visible: showTrendline });
-                }
+                fibExtIndicator.toggle(entry, overlay.config as FibExtConfig, newVisible);
             }
 
             if (overlay.type === 'volume' && newVisible) {

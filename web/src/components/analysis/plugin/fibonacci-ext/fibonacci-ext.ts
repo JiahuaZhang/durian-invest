@@ -72,6 +72,18 @@ const EXTENSION_RATIOS: Record<FibExtExtensionLevelKey, number> = {
 export const FibExtMeta = [
     { key: 'deviation', label: 'Deviation (ATR ×)', group: 'Input', type: 'number', default: 3, min: 0.1, max: 20, step: 0.1 },
     { key: 'depth', label: 'Depth (Bars)', group: 'Input', type: 'number', default: 11, min: 1, max: 100, step: 1 },
+    {
+        key: 'historyMode',
+        label: 'Historical Ranges',
+        group: 'Input',
+        type: 'select',
+        default: 1,
+        options: [
+            { value: 0, label: 'None' },
+            { value: 1, label: 'Last Only' },
+            { value: 2, label: 'All' },
+        ] as const,
+    },
     { key: 'showRetracement', label: 'Show Retracement (0–1)', group: 'Input', type: 'boolean', default: true },
     { key: 'showExtension', label: 'Show Extension (1.272+)', group: 'Input', type: 'boolean', default: true },
     { key: 'showTrendline', label: 'Show Zigzag Trendline', group: 'Input', type: 'boolean', default: true },
@@ -119,6 +131,19 @@ export const FibExtMeta = [
 
 export type FibExtConfig = DeriveConfig<typeof FibExtMeta>;
 export const defaultFibExtConfig: FibExtConfig = getDefaultConfig(FibExtMeta);
+
+export type FibExtHistoryMode = 0 | 1 | 2;
+
+export function getFibExtHistoryModeLabel(mode: number): string {
+    if (mode === 0) return 'None';
+    if (mode === 2) return 'All';
+    return 'Last';
+}
+
+function normalizeHistoryMode(mode: number): FibExtHistoryMode {
+    if (mode === 0 || mode === 2) return mode;
+    return 1;
+}
 
 // ============================================================================
 // Color Accessors
@@ -191,7 +216,7 @@ export type FibExtABC = {
 
 export type FibExtComputation = {
     zigzagPivots: ZigzagPivot[];
-    abc: FibExtABC | null;
+    abcList: FibExtABC[];
 };
 
 type RenderPoint = LineData<Time> | WhitespaceData<Time>;
@@ -334,12 +359,11 @@ function buildZigzag(
 // ============================================================================
 
 /**
- * Main computation: finds the zigzag pivots and extracts the most recent
- * 3-point A→B→C structure for extension/retracement.
+ * Main computation: finds the zigzag pivots and extracts all possible
+ * 3-point A→B→C structures for extension/retracement.
  *
- * A = start of impulse (the pivot before the mid)
- * B = mid pivot (the reversal point)
- * C = end of correction (the most recent confirmed pivot)
+ * Every consecutive 3-pivot window in the zigzag forms an ABC triplet:
+ *   zigzag[i] = A, zigzag[i+1] = B, zigzag[i+2] = C
  *
  * The retracement is drawn over the B→C leg.
  * The extension projects from C using the A→B offset × fib ratios.
@@ -348,20 +372,34 @@ export function computeFibExtData(
     candleData: CandleData[],
     config: FibExtConfig = defaultFibExtConfig,
 ): FibExtComputation {
-    if (candleData.length < 3) return { zigzagPivots: [], abc: null };
+    if (candleData.length < 3) return { zigzagPivots: [], abcList: [] };
 
     const depth = Math.max(1, Math.floor(config.depth));
     const deviation = Math.max(0.1, config.deviation);
     const zigzagPivots = buildZigzag(candleData, depth, deviation);
 
-    if (zigzagPivots.length < 3) return { zigzagPivots, abc: null };
+    if (zigzagPivots.length < 3) return { zigzagPivots, abcList: [] };
 
-    // Take the last 3 confirmed pivots for A→B→C
-    const c = zigzagPivots[zigzagPivots.length - 1];
-    const b = zigzagPivots[zigzagPivots.length - 2];
-    const a = zigzagPivots[zigzagPivots.length - 3];
+    // Extract all ABC triplets from consecutive zigzag pivot windows
+    const abcList: FibExtABC[] = [];
+    for (let i = 0; i <= zigzagPivots.length - 3; i++) {
+        abcList.push({
+            a: zigzagPivots[i],
+            b: zigzagPivots[i + 1],
+            c: zigzagPivots[i + 2],
+        });
+    }
 
-    return { zigzagPivots, abc: { a, b, c } };
+    return { zigzagPivots, abcList };
+}
+
+/**
+ * Filter ABC triplets based on history mode.
+ */
+function getVisibleABCs(abcList: FibExtABC[], mode: FibExtHistoryMode): FibExtABC[] {
+    if (mode === 0) return [];
+    if (mode === 1) return abcList.length > 0 ? [abcList[abcList.length - 1]] : [];
+    return abcList;
 }
 
 // ============================================================================
@@ -400,18 +438,69 @@ function buildZoneBand(
 }
 
 /**
+ * Compute retracement/extension levels and draw range for a single ABC triplet.
+ */
+function computeABCLevels(abc: FibExtABC) {
+    const { a, b, c } = abc;
+
+    // Retracement spans the B→C leg
+    const retLevel0 = b.price;
+    const retLevel1 = c.price;
+    const retRange = retLevel1 - retLevel0; // signed
+
+    const retLevels: Record<FibExtRetracementLevelKey, number> = {
+        level0: retLevel0 + retRange * RETRACEMENT_RATIOS.level0,
+        level236: retLevel0 + retRange * RETRACEMENT_RATIOS.level236,
+        level382: retLevel0 + retRange * RETRACEMENT_RATIOS.level382,
+        level5: retLevel0 + retRange * RETRACEMENT_RATIOS.level5,
+        level618: retLevel0 + retRange * RETRACEMENT_RATIOS.level618,
+        level786: retLevel0 + retRange * RETRACEMENT_RATIOS.level786,
+        level1: retLevel0 + retRange * RETRACEMENT_RATIOS.level1,
+    };
+
+    // Extension formula from TradingView DGT script
+    const isBullishCorrection = c.price > b.price;
+    const offsetAB = Math.abs(b.price - a.price);
+    const pivotDiffBC = Math.abs(b.price - c.price);
+
+    const computeExtLevel = (ratio: number): number => {
+        if (isBullishCorrection) {
+            return b.price + pivotDiffBC - offsetAB * ratio;
+        } else {
+            return b.price - pivotDiffBC + offsetAB * ratio;
+        }
+    };
+
+    const extLevels: Record<FibExtExtensionLevelKey, number> = {
+        ext1272: computeExtLevel(EXTENSION_RATIOS.ext1272),
+        ext1414: computeExtLevel(EXTENSION_RATIOS.ext1414),
+        ext1618: computeExtLevel(EXTENSION_RATIOS.ext1618),
+        ext2: computeExtLevel(EXTENSION_RATIOS.ext2),
+        ext2618: computeExtLevel(EXTENSION_RATIOS.ext2618),
+    };
+
+    return { retLevels, extLevels };
+}
+
+const RETRACEMENT_BAND_PAIRS: Array<[FibExtRetracementBandKey, FibExtRetracementLevelKey, FibExtRetracementLevelKey]> = [
+    ['zone0_236', 'level0', 'level236'],
+    ['zone236_382', 'level236', 'level382'],
+    ['zone382_5', 'level382', 'level5'],
+    ['zone5_618', 'level5', 'level618'],
+    ['zone618_786', 'level618', 'level786'],
+    ['zone786_1', 'level786', 'level1'],
+];
+
+const EXTENSION_BAND_PAIRS: Array<[FibExtExtensionBandKey, FibExtExtensionLevelKey, FibExtExtensionLevelKey]> = [
+    ['zone1272_1414', 'ext1272', 'ext1414'],
+    ['zone1414_1618', 'ext1414', 'ext1618'],
+    ['zone1618_2', 'ext1618', 'ext2'],
+    ['zone2_2618', 'ext2', 'ext2618'],
+];
+
+/**
  * Build all render data (lines, zone bands, trendlines) from the computation.
- *
- * Extension formula (from TradingView DGT script):
- *   offset = |price_B - price_A|  (impulse leg range)
- *   For bullish correction (C is a high, B→C went up):
- *     extension level = (B_price - |B-C|) + offset × ratio  →  projects upward from C
- *   For bearish correction (C is a low, B→C went down):
- *     extension level = (B_price + |B-C|) - offset × ratio  →  projects downward from C
- *
- * Simplified: the extension projects from C using the AB leg range in the C direction.
- *
- * Retracement: drawn on the B→C leg (the most recent confirmed swing).
+ * Respects historyMode to show none, last, or all ABC triplets.
  */
 export function buildFibExtRenderData(
     candleData: CandleData[],
@@ -430,138 +519,73 @@ export function buildFibExtRenderData(
     };
     const trendlineSegments: LineData<Time>[][] = [];
 
-    const { abc } = computed;
-    if (!abc) {
+    const historyMode = normalizeHistoryMode(config.historyMode);
+    const visibleABCs = getVisibleABCs(computed.abcList, historyMode);
+
+    if (visibleABCs.length === 0) {
         return { retracementData, extensionData, retracementZoneBands, extensionZoneBands, trendlineSegments };
     }
 
-    const { a, b, c } = abc;
+    for (const abc of visibleABCs) {
+        const { a, b, c } = abc;
+        const { retLevels, extLevels } = computeABCLevels(abc);
 
-    // Determine the direction of the B→C correction leg
-    // If C is higher than B → bullish correction (price went up) → extensions project upward
-    // If C is lower  than B → bearish correction (price went down) → extensions project downward
-    const isBullishCorrection = c.price > b.price;
+        // Draw range: from B's index to C's index (for historical), or to end of chart (for the last ABC)
+        const isLast = abc === visibleABCs[visibleABCs.length - 1];
+        const drawStart = b.index;
+        const drawEnd = isLast ? candleData.length - 1 : c.index;
 
-    // The retracement spans the B→C leg
-    const retLevel0 = b.price;
-    const retLevel1 = c.price;
-    const retRange = retLevel1 - retLevel0; // signed
-
-    // Retracement levels between B and C
-    const retLevels: Record<FibExtRetracementLevelKey, number> = {
-        level0: retLevel0 + retRange * RETRACEMENT_RATIOS.level0,
-        level236: retLevel0 + retRange * RETRACEMENT_RATIOS.level236,
-        level382: retLevel0 + retRange * RETRACEMENT_RATIOS.level382,
-        level5: retLevel0 + retRange * RETRACEMENT_RATIOS.level5,
-        level618: retLevel0 + retRange * RETRACEMENT_RATIOS.level618,
-        level786: retLevel0 + retRange * RETRACEMENT_RATIOS.level786,
-        level1: retLevel0 + retRange * RETRACEMENT_RATIOS.level1,
-    };
-
-    // Extension formula from TradingView DGT script:
-    //   offset = |B - A| (the impulse leg range)
-    //   For bullish: extPrice = B - |B-C| + offset * ratio
-    //     Simplified: extPrice = C_price + offset_AB * (ratio - 1)... but let's be precise:
-    //     Actually from the script: price = pEndBase < pMidPivot
-    //       ? pMidPivot - pPivotDiff + offset * level
-    //       : pMidPivot + pPivotDiff - offset * level
-    //     Where pPivotDiff = |B - C|, offset = |B - A|
-    //     pEndBase = C, pMidPivot = B, pStartBase = A
-    const offsetAB = Math.abs(b.price - a.price);
-    const pivotDiffBC = Math.abs(b.price - c.price);
-
-    const computeExtLevel = (ratio: number): number => {
-        if (isBullishCorrection) {
-            // C > B → pEndBase > pMidPivot in script terms → else branch
-            // price = pMidPivot + pPivotDiff - offset * level
-            return b.price + pivotDiffBC - offsetAB * ratio;
-        } else {
-            // C < B → pEndBase < pMidPivot in script terms → if branch
-            // price = pMidPivot - pPivotDiff + offset * level
-            return b.price - pivotDiffBC + offsetAB * ratio;
-        }
-    };
-
-    const extLevels: Record<FibExtExtensionLevelKey, number> = {
-        ext1272: computeExtLevel(EXTENSION_RATIOS.ext1272),
-        ext1414: computeExtLevel(EXTENSION_RATIOS.ext1414),
-        ext1618: computeExtLevel(EXTENSION_RATIOS.ext1618),
-        ext2: computeExtLevel(EXTENSION_RATIOS.ext2),
-        ext2618: computeExtLevel(EXTENSION_RATIOS.ext2618),
-    };
-
-    // Draw range: from B's index to end of chart data
-    const drawStart = b.index;
-    const drawEnd = candleData.length - 1;
-
-    const retracementBandPairs: Array<[FibExtRetracementBandKey, FibExtRetracementLevelKey, FibExtRetracementLevelKey]> = [
-        ['zone0_236', 'level0', 'level236'],
-        ['zone236_382', 'level236', 'level382'],
-        ['zone382_5', 'level382', 'level5'],
-        ['zone5_618', 'level5', 'level618'],
-        ['zone618_786', 'level618', 'level786'],
-        ['zone786_1', 'level786', 'level1'],
-    ];
-
-    const extensionBandPairs: Array<[FibExtExtensionBandKey, FibExtExtensionLevelKey, FibExtExtensionLevelKey]> = [
-        ['zone1272_1414', 'ext1272', 'ext1414'],
-        ['zone1414_1618', 'ext1414', 'ext1618'],
-        ['zone1618_2', 'ext1618', 'ext2'],
-        ['zone2_2618', 'ext2', 'ext2618'],
-    ];
-
-    // Retracement lines + zones
-    if (config.showRetracement) {
-        for (const key of fibExtRetracementLevelOrder) {
-            if (key === 'level5' && !config.showMidline) continue;
-            const value = retLevels[key];
-            for (let i = drawStart; i <= drawEnd; i++) {
-                retracementData[key][i] = { time: candleData[i].time as unknown as Time, value };
+        // Retracement lines + zones
+        if (config.showRetracement) {
+            for (const key of fibExtRetracementLevelOrder) {
+                if (key === 'level5' && !config.showMidline) continue;
+                const value = retLevels[key];
+                for (let i = drawStart; i <= drawEnd; i++) {
+                    retracementData[key][i] = { time: candleData[i].time as unknown as Time, value };
+                }
+            }
+            for (const [bandKey, lowKey, highKey] of RETRACEMENT_BAND_PAIRS) {
+                const top = Math.max(retLevels[lowKey], retLevels[highKey]);
+                const bottom = Math.min(retLevels[lowKey], retLevels[highKey]);
+                retracementZoneBands[bandKey].push(buildZoneBand(candleData, drawStart, drawEnd, top, bottom));
             }
         }
-        for (const [bandKey, lowKey, highKey] of retracementBandPairs) {
-            const top = Math.max(retLevels[lowKey], retLevels[highKey]);
-            const bottom = Math.min(retLevels[lowKey], retLevels[highKey]);
-            retracementZoneBands[bandKey].push(buildZoneBand(candleData, drawStart, drawEnd, top, bottom));
-        }
-    }
 
-    // Extension lines + zones
-    if (config.showExtension) {
-        for (const key of fibExtExtensionLevelOrder) {
-            const value = extLevels[key];
-            for (let i = drawStart; i <= drawEnd; i++) {
-                extensionData[key][i] = { time: candleData[i].time as unknown as Time, value };
+        // Extension lines + zones
+        if (config.showExtension) {
+            for (const key of fibExtExtensionLevelOrder) {
+                const value = extLevels[key];
+                for (let i = drawStart; i <= drawEnd; i++) {
+                    extensionData[key][i] = { time: candleData[i].time as unknown as Time, value };
+                }
+            }
+            for (const [bandKey, lowKey, highKey] of EXTENSION_BAND_PAIRS) {
+                const top = Math.max(extLevels[lowKey], extLevels[highKey]);
+                const bottom = Math.min(extLevels[lowKey], extLevels[highKey]);
+                extensionZoneBands[bandKey].push(buildZoneBand(candleData, drawStart, drawEnd, top, bottom));
             }
         }
-        for (const [bandKey, lowKey, highKey] of extensionBandPairs) {
-            const top = Math.max(extLevels[lowKey], extLevels[highKey]);
-            const bottom = Math.min(extLevels[lowKey], extLevels[highKey]);
-            extensionZoneBands[bandKey].push(buildZoneBand(candleData, drawStart, drawEnd, top, bottom));
-        }
-    }
 
-    // Trendlines: draw the zigzag connecting all pivots, plus the A→B and B→C legs
-    if (config.showTrendline) {
-        // Draw the A→B leg
-        if (a.index !== b.index) {
-            const legAB: LineData<Time>[] = [];
-            const span = b.index - a.index;
-            for (let i = a.index; i <= b.index; i++) {
-                const t = span === 0 ? 0 : (i - a.index) / span;
-                legAB.push({ time: candleData[i].time as unknown as Time, value: a.price + (b.price - a.price) * t });
+        // Trendlines: A→B and B→C legs
+        if (config.showTrendline) {
+            if (a.index !== b.index) {
+                const legAB: LineData<Time>[] = [];
+                const span = b.index - a.index;
+                for (let i = a.index; i <= b.index; i++) {
+                    const t = span === 0 ? 0 : (i - a.index) / span;
+                    legAB.push({ time: candleData[i].time as unknown as Time, value: a.price + (b.price - a.price) * t });
+                }
+                trendlineSegments.push(legAB);
             }
-            trendlineSegments.push(legAB);
-        }
-        // Draw the B→C leg
-        if (b.index !== c.index) {
-            const legBC: LineData<Time>[] = [];
-            const span = c.index - b.index;
-            for (let i = b.index; i <= c.index; i++) {
-                const t = span === 0 ? 0 : (i - b.index) / span;
-                legBC.push({ time: candleData[i].time as unknown as Time, value: b.price + (c.price - b.price) * t });
+            if (b.index !== c.index) {
+                const legBC: LineData<Time>[] = [];
+                const span = c.index - b.index;
+                for (let i = b.index; i <= c.index; i++) {
+                    const t = span === 0 ? 0 : (i - b.index) / span;
+                    legBC.push({ time: candleData[i].time as unknown as Time, value: b.price + (c.price - b.price) * t });
+                }
+                trendlineSegments.push(legBC);
             }
-            trendlineSegments.push(legBC);
         }
     }
 
