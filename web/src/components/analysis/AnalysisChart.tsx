@@ -106,6 +106,12 @@ function AnalysisChartInner() {
                             setOverlayLegend(overlay.id, { value: lineData.value });
                         }
                     }
+                    if (overlay.type === 'vwap') {
+                        const lineData = param.seriesData.get(series) as LineData<Time> | undefined;
+                        if (lineData?.value !== undefined) {
+                            setOverlayLegend(overlay.id, { value: lineData.value });
+                        }
+                    }
                     if (overlay.type === 'market-bias') {
                         const mbData = param.seriesData.get(series) as any;
                         if (mbData?.open !== undefined && mbData?.high !== undefined &&
@@ -177,6 +183,9 @@ function AnalysisChartInner() {
                     <AddButton onClick={() => addOverlay('fibonacci-ext')}>
                         + Fib Extension
                     </AddButton>
+                    <AddButton onClick={() => addOverlay('vwap')}>
+                        + VWAP
+                    </AddButton>
                     <AddButton onClick={() => addIndicator('macd')}>
                         + MACD
                     </AddButton>
@@ -195,7 +204,7 @@ function AnalysisChartInner() {
                     un-position='relative'
                 >
                     <ChartLegend />
-                    <div ref={chartContainerRef} un-h='full' />
+                    <div ref={chartContainerRef} un-h='full' un-position='relative' />
                 </div>
 
                 {/* <TechnicalSignals /> */}

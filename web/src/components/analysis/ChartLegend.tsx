@@ -1,8 +1,9 @@
-import { type EMALegend, type FibExtLegend, type FibonacciLegend, type MainLegend, type MarketBiasLegend, type OverlayIndicator, type SMALegend, type VolumeConfig, type VolumeLegend, useLegend, useOverlays } from "./context/ChartContext";
+import { type EMALegend, type FibExtLegend, type FibonacciLegend, type MainLegend, type MarketBiasLegend, type OverlayIndicator, type SMALegend, type VolumeConfig, type VolumeLegend, type VWAPLegend, useLegend, useOverlays } from "./context/ChartContext";
 import { FibonacciMeta, getFibonacciHistoryModeLabel, type FibonacciConfig } from "./plugin/fibonacci/fibonacci";
 import { FibExtMeta, type FibExtConfig } from "./plugin/fibonacci-ext/fibonacci-ext";
 import { MarketBiasMeta, type MarketBiasConfig } from "./plugin/market-bias/market-bias";
 import type { MAConfig } from "./plugin/moving-average/ma";
+import { VWAPMeta, type VWAPConfig } from "./plugin/volume-weighted-average-price/vwap";
 import { Eye, EyeOff, Settings, X } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { ChartConfigPopup } from "./ChartConfigPopup";
@@ -37,6 +38,10 @@ const getOverlayLabel = (overlay: OverlayIndicator) => {
             const config = overlay.config as FibExtConfig;
             return `FibExt(${config.deviation}, ${config.depth})`;
         }
+        case 'vwap': {
+            const config = overlay.config as VWAPConfig;
+            return `VWAP(${config.barsBack})`;
+        }
         default: return overlay.type;
     }
 }
@@ -44,7 +49,7 @@ const getOverlayLabel = (overlay: OverlayIndicator) => {
 // Get formatted value for overlay based on type
 const getOverlayValueFromLegend = (
     type: string,
-    legend: VolumeLegend | SMALegend | EMALegend | MarketBiasLegend | FibonacciLegend | FibExtLegend | undefined
+    legend: VolumeLegend | SMALegend | EMALegend | MarketBiasLegend | FibonacciLegend | FibExtLegend | VWAPLegend | undefined
 ): number | undefined => {
     if (!legend) return undefined;
 
@@ -60,16 +65,18 @@ const getOverlayValueFromLegend = (
             return (legend as FibonacciLegend).value;
         case 'fibonacci-ext':
             return (legend as FibExtLegend).value;
+        case 'vwap':
+            return (legend as VWAPLegend).value;
         default:
             return undefined;
     }
 }
 
-const isPriceOverlay = (type: string) => type === 'sma' || type === 'ema' || type === 'market-bias' || type === 'fibonacci' || type === 'fibonacci-ext';
+const isPriceOverlay = (type: string) => type === 'sma' || type === 'ema' || type === 'market-bias' || type === 'fibonacci' || type === 'fibonacci-ext' || type === 'vwap';
 
 type OverlayLegendItemProps = {
     overlay: OverlayIndicator;
-    overlayLegend: VolumeLegend | SMALegend | EMALegend | MarketBiasLegend | FibonacciLegend | FibExtLegend | undefined;
+    overlayLegend: VolumeLegend | SMALegend | EMALegend | MarketBiasLegend | FibonacciLegend | FibExtLegend | VWAPLegend | undefined;
     color: string;
 }
 
@@ -123,6 +130,15 @@ function OverlayLegendItem({ overlay, overlayLegend, color }: OverlayLegendItemP
         return buildMetaTabs(
             FibExtMeta,
             overlay.config as FibExtConfig,
+            (updates) => updateOverlayConfig(overlay.id, updates)
+        );
+    }, [overlay.id, overlay.type, overlay.config, updateOverlayConfig]);
+
+    const vwapTabs = useMemo(() => {
+        if (overlay.type !== 'vwap') return [];
+        return buildMetaTabs(
+            VWAPMeta,
+            overlay.config as VWAPConfig,
             (updates) => updateOverlayConfig(overlay.id, updates)
         );
     }, [overlay.id, overlay.type, overlay.config, updateOverlayConfig]);
@@ -220,6 +236,15 @@ function OverlayLegendItem({ overlay, overlayLegend, color }: OverlayLegendItemP
                     onClose={() => setConfigOpen(false)}
                     triggerRef={cogRef}
                     tabs={fibExtTabs}
+                />
+            )}
+            {overlay.type === 'vwap' && (
+                <ChartConfigPopup
+                    title="VWAP Settings"
+                    isOpen={configOpen}
+                    onClose={() => setConfigOpen(false)}
+                    triggerRef={cogRef}
+                    tabs={vwapTabs}
                 />
             )}
         </div>

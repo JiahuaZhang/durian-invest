@@ -6,6 +6,11 @@ import {
 } from '../plugin/fibonacci-ext/fibonacci-ext';
 import { fibExtIndicator } from '../plugin/fibonacci-ext/fibonacci-ext.indicator';
 import {
+    defaultVWAPConfig,
+    type VWAPConfig
+} from '../plugin/volume-weighted-average-price/vwap';
+import { vwapIndicator } from '../plugin/volume-weighted-average-price/vwap.indicator';
+import {
     buildFibonacciRenderData,
     computeFibonacciData,
     defaultFibonacciConfig,
@@ -31,7 +36,7 @@ export { useCandleData, type CandleData } from './ChartDataContext';
 // Types
 // ============================================================================
 
-export type OverlayType = 'volume' | 'sma' | 'ema' | 'market-bias' | 'fibonacci' | 'fibonacci-ext';
+export type OverlayType = 'volume' | 'sma' | 'ema' | 'market-bias' | 'fibonacci' | 'fibonacci-ext' | 'vwap';
 export type IndicatorType = 'macd' | 'rsi';
 
 // Re-export plugin config types for convenience
@@ -41,12 +46,13 @@ export type { MACDConfig } from '../plugin/macd/macd';
 export type { MarketBiasConfig } from '../plugin/market-bias/market-bias';
 export type { RSIConfig } from '../plugin/relative-strength-index/rsi';
 export type { VolumeConfig } from '../plugin/volume/volume';
+export type { VWAPConfig } from '../plugin/volume-weighted-average-price/vwap';
 
 export type OverlayIndicator = {
     id: string;
     type: OverlayType;
     visible: boolean;
-    config: VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig;
+    config: VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig | VWAPConfig;
     data: any[];
 };
 
@@ -74,7 +80,8 @@ export type EMALegend = { value: number; };
 export type MarketBiasLegend = { open: number; high: number; low: number; close: number; };
 export type FibonacciLegend = { value: number; };
 export type FibExtLegend = { value: number; };
-export type OverlayLegend = VolumeLegend | SMALegend | EMALegend | MarketBiasLegend | FibonacciLegend | FibExtLegend;
+export type VWAPLegend = { value: number; };
+export type OverlayLegend = VolumeLegend | SMALegend | EMALegend | MarketBiasLegend | FibonacciLegend | FibExtLegend | VWAPLegend;
 
 type OverlaySeriesEntry = {
     primary: ISeriesApi<any>;
@@ -114,7 +121,7 @@ const initialState: ChartState = {
 type ChartAction =
     | { type: 'OVERLAY_ADDED'; overlay: OverlayIndicator; }
     | { type: 'OVERLAY_REMOVED'; id: string; }
-    | { type: 'OVERLAY_CONFIG_UPDATED'; id: string; config: VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig; data: any[]; }
+    | { type: 'OVERLAY_CONFIG_UPDATED'; id: string; config: VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig | VWAPConfig; data: any[]; }
     | { type: 'OVERLAY_TOGGLED'; id: string; visible: boolean; }
     | { type: 'INDICATOR_ADDED'; indicator: SubIndicator; }
     | { type: 'INDICATOR_REMOVED'; id: string; }
@@ -223,7 +230,7 @@ type ChartContextType = {
         destroyChart: () => void;
         addOverlay: (type: OverlayType) => string;
         removeOverlay: (id: string) => void;
-        updateOverlayConfig: <T extends VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig>(id: string, configUpdates: Partial<T>) => void;
+        updateOverlayConfig: <T extends VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig | VWAPConfig>(id: string, configUpdates: Partial<T>) => void;
         toggleOverlay: (id: string) => void;
         addIndicator: (type: IndicatorType) => string;
         removeIndicator: (id: string) => void;
@@ -411,6 +418,12 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
                 overlaySeriesRef.current.set(overlay.id, entry);
                 dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id: overlay.id, config: overlay.config, data });
             }
+            if (overlay.type === 'vwap') {
+                const vwapConfig = overlay.config as VWAPConfig;
+                const { entry, data } = vwapIndicator.add(chart, candleData, vwapConfig, overlay.visible);
+                overlaySeriesRef.current.set(overlay.id, entry);
+                dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id: overlay.id, config: overlay.config, data });
+            }
         });
     }, [candleData]);
 
@@ -545,6 +558,19 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
             dispatch({ type: 'OVERLAY_ADDED', overlay: { id, type, visible: true, config, data } });
         }
 
+        if (type === 'vwap') {
+            const config: VWAPConfig = { ...defaultVWAPConfig };
+            let data: any = {};
+
+            if (chart) {
+                const result = vwapIndicator.add(chart, candleData, config);
+                overlaySeriesRef.current.set(id, result.entry);
+                data = result.data;
+            }
+
+            dispatch({ type: 'OVERLAY_ADDED', overlay: { id, type, visible: true, config, data } });
+        }
+
         return id;
     }, [candleData]);
 
@@ -575,7 +601,7 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
         dispatch({ type: 'OVERLAY_REMOVED', id });
     }, []);
 
-    const updateOverlayConfig = useCallback(<T extends VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig>(id: string, configUpdates: Partial<T>) => {
+    const updateOverlayConfig = useCallback(<T extends VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig | VWAPConfig>(id: string, configUpdates: Partial<T>) => {
         const currentState = stateRef.current;
         const overlay = currentState.overlays[id];
         if (!overlay) return;
@@ -696,6 +722,25 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
                 dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data: [] });
             }
         }
+
+        if (overlay.type === 'vwap') {
+            const vwapConfig = newConfig as VWAPConfig;
+            const chart = chartRef.current;
+            let targetEntry = entry;
+
+            if (!targetEntry && chart) {
+                const result = vwapIndicator.add(chart, candleData, vwapConfig, overlay.visible);
+                targetEntry = result.entry;
+                overlaySeriesRef.current.set(id, targetEntry);
+            }
+
+            if (targetEntry && chart) {
+                const data = vwapIndicator.update(chart, targetEntry, candleData, vwapConfig, overlay.visible);
+                dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data });
+            } else {
+                dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data: [] });
+            }
+        }
     }, [candleData]);
 
     const toggleOverlay = useCallback((id: string) => {
@@ -754,6 +799,10 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
 
             if (overlay.type === 'fibonacci-ext') {
                 fibExtIndicator.toggle(entry, overlay.config as FibExtConfig, newVisible);
+            }
+
+            if (overlay.type === 'vwap') {
+                vwapIndicator.toggle(entry, overlay.config as VWAPConfig, newVisible);
             }
 
             if (overlay.type === 'volume' && newVisible) {
