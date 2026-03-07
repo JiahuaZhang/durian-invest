@@ -70,10 +70,31 @@ export type GexProfile = {
     expirationDate: string
 }
 
+export type OptionOpenInterestStrike = {
+    strike: number
+    callOpenInterest: number
+    putOpenInterest: number
+    totalOpenInterest: number
+}
+
+export type OptionOpenInterestProfile = {
+    symbol: string
+    price: number
+    expirationDate: number
+    expirationDateLabel: string
+    strikes: OptionOpenInterestStrike[]
+}
+
 let cachedCrumb: string | null = null
 let cachedCookie: string | null = null
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+const symbolMap: Record<string, string> = {
+    SPX: '^SPX',
+    NDX: '^NDX',
+    DJI: '^DJI',
+    VIX: '^VIX',
+}
 
 async function getSession(): Promise<{ crumb: string | null, cookie: string | null }> {
     if (cachedCrumb && cachedCookie) return { crumb: cachedCrumb, cookie: cachedCookie }
@@ -116,6 +137,110 @@ async function getSession(): Promise<{ crumb: string | null, cookie: string | nu
     }
 }
 
+function resolveYahooSymbol(symbol: string): string {
+    const upperSymbol = symbol.toUpperCase()
+    return symbolMap[upperSymbol] ?? upperSymbol
+}
+
+function buildOptionChainUrl(yahooSymbol: string, crumb: string | null, expirationDate?: number): string {
+    const params = new URLSearchParams()
+    if (typeof expirationDate === 'number') {
+        params.set('date', String(expirationDate))
+    }
+    if (crumb) {
+        params.set('crumb', crumb)
+    }
+    const query = params.toString()
+    return `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(yahooSymbol)}${query ? `?${query}` : ''}`
+}
+
+async function fetchYahooOptionChain(symbol: string, expirationDate?: number): Promise<YahooOptionChainResult> {
+    let { crumb, cookie } = await getSession()
+
+    const headers: Record<string, string> = { 'User-Agent': USER_AGENT }
+    if (cookie) headers.Cookie = cookie
+
+    const yahooSymbol = resolveYahooSymbol(symbol)
+    let response = await fetch(buildOptionChainUrl(yahooSymbol, crumb, expirationDate), { headers })
+
+    if (response.status === 401) {
+        console.warn('Yahoo: Session expired, refreshing...')
+        cachedCrumb = null
+        cachedCookie = null
+
+        const refreshed = await getSession()
+        crumb = refreshed.crumb
+        cookie = refreshed.cookie
+
+        const retryHeaders: Record<string, string> = { 'User-Agent': USER_AGENT }
+        if (cookie) retryHeaders.Cookie = cookie
+        response = await fetch(buildOptionChainUrl(yahooSymbol, crumb, expirationDate), { headers: retryHeaders })
+    }
+
+    if (!response.ok) {
+        const text = await response.text()
+        throw new Error(`Failed to fetch options data (${response.status}): ${text.slice(0, 100)}`)
+    }
+
+    const data: YahooResponse = await response.json()
+    const result = data.optionChain.result[0]
+
+    if (!result) throw new Error(`No option data found for ${symbol.toUpperCase()}`)
+    if (!result.options || result.options.length === 0) {
+        throw new Error(`No options chain available for ${symbol.toUpperCase()}. Try SPY or QQQ instead.`)
+    }
+
+    return result
+}
+
+export const getOptionOpenInterestData = createServerFn({ method: 'GET' })
+    .inputValidator((data: { symbol: string; expirationDate?: number }) => data)
+    .handler(async ({ data }) => {
+        const result = await fetchYahooOptionChain(data.symbol, data.expirationDate)
+        const chain = data.expirationDate
+            ? result.options.find(option => option.expirationDate === data.expirationDate) ?? result.options[0]
+            : result.options[0]
+
+        const strikeMap = new Map<number, OptionOpenInterestStrike>()
+
+        const upsertStrike = (strike: number): OptionOpenInterestStrike => {
+            const existing = strikeMap.get(strike)
+            if (existing) return existing
+            const emptyStrike: OptionOpenInterestStrike = {
+                strike,
+                callOpenInterest: 0,
+                putOpenInterest: 0,
+                totalOpenInterest: 0,
+            }
+            strikeMap.set(strike, emptyStrike)
+            return emptyStrike
+        }
+
+        chain.calls.forEach(option => {
+            const strike = upsertStrike(option.strike)
+            strike.callOpenInterest += Math.max(0, option.openInterest ?? 0)
+            strike.totalOpenInterest = strike.callOpenInterest + strike.putOpenInterest
+        })
+
+        chain.puts.forEach(option => {
+            const strike = upsertStrike(option.strike)
+            strike.putOpenInterest += Math.max(0, option.openInterest ?? 0)
+            strike.totalOpenInterest = strike.callOpenInterest + strike.putOpenInterest
+        })
+
+        const strikes = Array.from(strikeMap.values())
+            .filter(strike => strike.totalOpenInterest > 0)
+            .sort((a, b) => a.strike - b.strike)
+
+        return {
+            symbol: result.underlyingSymbol,
+            price: result.quote.regularMarketPrice,
+            expirationDate: chain.expirationDate,
+            expirationDateLabel: new Date(chain.expirationDate * 1000).toISOString().split('T')[0],
+            strikes,
+        }
+    })
+
 
 /**
  * Estimates Gamma for an option given its properties.
@@ -139,53 +264,7 @@ function calculateGamma(
 export const getGexData = createServerFn({ method: "GET" })
     .inputValidator((symbol: string) => symbol)
     .handler(async ({ data: symbol }) => {
-        let { crumb, cookie } = await getSession()
-
-        const headers: Record<string, string> = { 'User-Agent': USER_AGENT }
-        if (cookie) headers['Cookie'] = cookie
-
-        // Map URL-friendly symbols to Yahoo Finance symbols
-        const symbolMap: Record<string, string> = {
-            'SPX': '^SPX',
-            'NDX': '^NDX',
-            'DJI': '^DJI',
-            'VIX': '^VIX',
-        }
-        const upperSymbol = symbol.toUpperCase()
-        const yahooSymbol = symbolMap[upperSymbol] ?? upperSymbol
-
-        const crumbParam = crumb ? `&crumb=${crumb}` : ''
-        const url = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(yahooSymbol)}?${crumbParam}`
-
-        let response = await fetch(url, { headers })
-
-        // If 401, session expired - clear cache and retry once
-        if (response.status === 401) {
-            console.warn('Yahoo: Session expired, refreshing...')
-            cachedCrumb = null
-            cachedCookie = null
-            const newSession = await getSession()
-            crumb = newSession.crumb
-            cookie = newSession.cookie
-
-            const retryHeaders: Record<string, string> = { 'User-Agent': USER_AGENT }
-            if (cookie) retryHeaders['Cookie'] = cookie
-            const retryUrl = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(yahooSymbol)}?${crumb ? `&crumb=${crumb}` : ''}`
-            response = await fetch(retryUrl, { headers: retryHeaders })
-        }
-
-        if (!response.ok) {
-            const text = await response.text()
-            throw new Error(`Failed to fetch options data (${response.status}): ${text.slice(0, 100)}`)
-        }
-
-        const data: YahooResponse = await response.json()
-        const result = data.optionChain.result[0]
-
-        if (!result) throw new Error(`No option data found for ${upperSymbol}`)
-        if (!result.options || result.options.length === 0) {
-            throw new Error(`No options chain available for ${upperSymbol}. Try SPY or QQQ instead.`)
-        }
+        const result = await fetchYahooOptionChain(symbol)
 
         const currentPrice = result.quote.regularMarketPrice
         const now = Date.now() / 1000
