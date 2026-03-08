@@ -2,13 +2,12 @@ import { devtools } from '@tanstack/devtools-vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import viteReact from '@vitejs/plugin-react'
 import { nitro } from 'nitro/vite'
-import UnoCSS from 'unocss/vite'
+import UnoCSS from '@unocss/postcss'
 import { defineConfig } from 'vite'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 
 const config = defineConfig({
   plugins: [
-    UnoCSS(),
     devtools(),
     nitro(),
     // this is the plugin that enables path aliases
@@ -25,6 +24,13 @@ const config = defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/yahoo/, ''),
       },
+    },
+  },
+  css: {
+    postcss: {
+      plugins: [
+        UnoCSS(),
+      ],
     },
   },
 })

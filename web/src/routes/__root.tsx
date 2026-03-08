@@ -1,7 +1,7 @@
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
-import 'virtual:uno.css'
+import unoCss from '../uno.css?url'
 import { Sidebar } from '../components/Sidebar'
 
 export const Route = createRootRoute({
@@ -18,7 +18,12 @@ export const Route = createRootRoute({
         title: 'Durian Invest',
       },
     ],
-    links: [],
+    links: [
+      {
+        rel: 'stylesheet',
+        href: unoCss,
+      },
+    ],
   }),
 
   shellComponent: RootDocument,
