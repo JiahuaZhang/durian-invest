@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start'
 
-type YahooOption = {
+export type YahooOption = {
     contractSymbol: string
     strike: number
     currency: string
@@ -18,7 +18,14 @@ type YahooOption = {
     inTheMoney: boolean
 }
 
-type YahooOptionChainResult = {
+export type YahooOptionChainEntry = {
+    expirationDate: number
+    hasMiniOptions: boolean
+    calls: YahooOption[]
+    puts: YahooOption[]
+}
+
+export type YahooOptionChainResult = {
     underlyingSymbol: string
     expirationDates: number[]
     strikes: number[]
@@ -37,12 +44,7 @@ type YahooOptionChainResult = {
         regularMarketDayLow: number
         regularMarketVolume: number
     }
-    options: {
-        expirationDate: number
-        hasMiniOptions: boolean
-        calls: YahooOption[]
-        puts: YahooOption[]
-    }[]
+    options: YahooOptionChainEntry[]
 }
 
 type YahooResponse = {
@@ -68,21 +70,6 @@ export type GexProfile = {
     zeroGexStrike: number
     strikes: GexStrikeData[]
     expirationDate: string
-}
-
-export type OptionOpenInterestStrike = {
-    strike: number
-    callOpenInterest: number
-    putOpenInterest: number
-    totalOpenInterest: number
-}
-
-export type OptionOpenInterestProfile = {
-    symbol: string
-    price: number
-    expirationDate: number
-    expirationDateLabel: string
-    strikes: OptionOpenInterestStrike[]
 }
 
 let cachedCrumb: string | null = null
@@ -142,10 +129,10 @@ function resolveYahooSymbol(symbol: string): string {
     return symbolMap[upperSymbol] ?? upperSymbol
 }
 
-function buildOptionChainUrl(yahooSymbol: string, crumb: string | null, expirationDate?: number): string {
+function buildOptionChainUrl(yahooSymbol: string, crumb: string | null, date?: number): string {
     const params = new URLSearchParams()
-    if (typeof expirationDate === 'number') {
-        params.set('date', String(expirationDate))
+    if (typeof date === 'number') {
+        params.set('date', String(date))
     }
     if (crumb) {
         params.set('crumb', crumb)
@@ -154,14 +141,14 @@ function buildOptionChainUrl(yahooSymbol: string, crumb: string | null, expirati
     return `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(yahooSymbol)}${query ? `?${query}` : ''}`
 }
 
-async function fetchYahooOptionChain(symbol: string, expirationDate?: number): Promise<YahooOptionChainResult> {
+async function fetchYahooOptionChain(symbol: string, date?: number): Promise<YahooOptionChainResult> {
     let { crumb, cookie } = await getSession()
 
     const headers: Record<string, string> = { 'User-Agent': USER_AGENT }
     if (cookie) headers.Cookie = cookie
 
     const yahooSymbol = resolveYahooSymbol(symbol)
-    let response = await fetch(buildOptionChainUrl(yahooSymbol, crumb, expirationDate), { headers })
+    let response = await fetch(buildOptionChainUrl(yahooSymbol, crumb, date), { headers })
 
     if (response.status === 401) {
         console.warn('Yahoo: Session expired, refreshing...')
@@ -174,7 +161,7 @@ async function fetchYahooOptionChain(symbol: string, expirationDate?: number): P
 
         const retryHeaders: Record<string, string> = { 'User-Agent': USER_AGENT }
         if (cookie) retryHeaders.Cookie = cookie
-        response = await fetch(buildOptionChainUrl(yahooSymbol, crumb, expirationDate), { headers: retryHeaders })
+        response = await fetch(buildOptionChainUrl(yahooSymbol, crumb, date), { headers: retryHeaders })
     }
 
     if (!response.ok) {
@@ -186,59 +173,14 @@ async function fetchYahooOptionChain(symbol: string, expirationDate?: number): P
     const result = data.optionChain.result[0]
 
     if (!result) throw new Error(`No option data found for ${symbol.toUpperCase()}`)
-    if (!result.options || result.options.length === 0) {
-        throw new Error(`No options chain available for ${symbol.toUpperCase()}. Try SPY or QQQ instead.`)
-    }
 
     return result
 }
 
 export const getOptionOpenInterestData = createServerFn({ method: 'GET' })
-    .inputValidator((data: { symbol: string; expirationDate?: number }) => data)
+    .inputValidator((data: { symbol: string; date?: number }) => data)
     .handler(async ({ data }) => {
-        const result = await fetchYahooOptionChain(data.symbol, data.expirationDate)
-        const chain = data.expirationDate
-            ? result.options.find(option => option.expirationDate === data.expirationDate) ?? result.options[0]
-            : result.options[0]
-
-        const strikeMap = new Map<number, OptionOpenInterestStrike>()
-
-        const upsertStrike = (strike: number): OptionOpenInterestStrike => {
-            const existing = strikeMap.get(strike)
-            if (existing) return existing
-            const emptyStrike: OptionOpenInterestStrike = {
-                strike,
-                callOpenInterest: 0,
-                putOpenInterest: 0,
-                totalOpenInterest: 0,
-            }
-            strikeMap.set(strike, emptyStrike)
-            return emptyStrike
-        }
-
-        chain.calls.forEach(option => {
-            const strike = upsertStrike(option.strike)
-            strike.callOpenInterest += Math.max(0, option.openInterest ?? 0)
-            strike.totalOpenInterest = strike.callOpenInterest + strike.putOpenInterest
-        })
-
-        chain.puts.forEach(option => {
-            const strike = upsertStrike(option.strike)
-            strike.putOpenInterest += Math.max(0, option.openInterest ?? 0)
-            strike.totalOpenInterest = strike.callOpenInterest + strike.putOpenInterest
-        })
-
-        const strikes = Array.from(strikeMap.values())
-            .filter(strike => strike.totalOpenInterest > 0)
-            .sort((a, b) => a.strike - b.strike)
-
-        return {
-            symbol: result.underlyingSymbol,
-            price: result.quote.regularMarketPrice,
-            expirationDate: chain.expirationDate,
-            expirationDateLabel: new Date(chain.expirationDate * 1000).toISOString().split('T')[0],
-            strikes,
-        }
+        return await fetchYahooOptionChain(data.symbol, data.date)
     })
 
 
@@ -265,6 +207,9 @@ export const getGexData = createServerFn({ method: "GET" })
     .inputValidator((symbol: string) => symbol)
     .handler(async ({ data: symbol }) => {
         const result = await fetchYahooOptionChain(symbol)
+        if (!result.options || result.options.length === 0) {
+            throw new Error(`No options chain available for ${symbol.toUpperCase()}. Try SPY or QQQ instead.`)
+        }
 
         const currentPrice = result.quote.regularMarketPrice
         const now = Date.now() / 1000

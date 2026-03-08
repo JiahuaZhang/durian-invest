@@ -37,7 +37,7 @@ function RouteComponent() {
     return (
         <div un-flex="~ col gap-2" un-p="6">
             <SymbolSearch initialValue={symbol} />
-            <AnalysisChart key={symbol} data={data} />
+            {/* <AnalysisChart key={symbol} data={data} /> */}
             <OptionAnalysis symbol={symbol} />
         </div>
     )
