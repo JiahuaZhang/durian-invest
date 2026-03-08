@@ -292,9 +292,9 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
                 <>
                     <OptionBarChart strikes={strikes} mode={mode} metricView={metricView} />
 
-                    <div un-flex="~ gap-4 wrap" un-text="sm slate-600">
+                    <div un-grid="~" un-text="sm slate-600">
                         {(metricView === 'openInterest' || metricView === 'both') && (
-                            <>
+                            <div un-flex="~ gap-2">
                                 <span>
                                     Call OI: <strong un-text="green-700">{formatCompactNumber(totals.callOpenInterest)}</strong>
                                 </span>
@@ -304,10 +304,13 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
                                 <span>
                                     Net OI: <strong>{formatCompactNumber(totals.callOpenInterest - totals.putOpenInterest)}</strong>
                                 </span>
-                            </>
+                                <span>
+                                    Put Call Ratio: <strong>{(totals.putOpenInterest / totals.callOpenInterest).toFixed(2)}</strong>
+                                </span>
+                            </div>
                         )}
                         {(metricView === 'volume' || metricView === 'both') && (
-                            <>
+                            <div un-flex="~ gap-2">
                                 <span>
                                     Call Vol: <strong un-text="green-500">{formatCompactNumber(totals.callVolume)}</strong>
                                 </span>
@@ -317,7 +320,10 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
                                 <span>
                                     Net Vol: <strong>{formatCompactNumber(totals.callVolume - totals.putVolume)}</strong>
                                 </span>
-                            </>
+                                <span>
+                                    Put Call Ratio: <strong>{(totals.putVolume / totals.callVolume).toFixed(2)}</strong>
+                                </span>
+                            </div>
                         )}
                     </div>
                 </>
