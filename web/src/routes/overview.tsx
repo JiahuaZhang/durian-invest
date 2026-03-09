@@ -18,6 +18,7 @@ const indicesTabs = [
       { s: "FOREXCOM:SPXUSD", d: "S&P 500" },
       { s: "FOREXCOM:NSXUSD", d: "US 100" },
       { s: "CAPITALCOM:GOLD", d: "Gold" },
+      { s: "TVC:USOIL", d: "Crude Oil" },
       { s: "CAPITALCOM:SILVER", d: "Silver" },
       { s: "CAPITALCOM:COPPER", d: "Copper" },
       { s: "CAPITALCOM:PLATINUM", d: "Platinum" },

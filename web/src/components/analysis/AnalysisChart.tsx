@@ -9,7 +9,7 @@ export type AnalysisChartProps = {
 
 export function AnalysisChart({ data, symbol }: AnalysisChartProps) {
     return (
-        <div un-flex="~ col gap-8">
+        <div un-flex="~ col gap-4">
             <CandleAnalysis data={data} />
             <OptionAnalysis symbol={symbol} key={symbol} />
         </div>
