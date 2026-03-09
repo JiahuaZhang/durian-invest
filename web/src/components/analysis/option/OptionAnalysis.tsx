@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CHART_MODES, METRIC_VIEWS } from './option-analysis/constants'
 import { OptionBarChart } from './option-analysis/OptionBarChart'
+import { OptionVolatility } from './option-analysis/OptionVolatility'
 import type { ChartMode, MaxPainResult, MetricView } from './option-analysis/types'
 import {
     buildCacheKey,
@@ -271,6 +272,7 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
             {!loading && !error && strikes.length > 0 && (
                 <>
                     <OptionBarChart strikes={strikes} mode={mode} metricView={metricView} />
+                    <OptionVolatility symbol={normalizedSymbol} chain={activeChain} spotPrice={quote?.regularMarketPrice} />
 
                     <div un-grid="~" un-text="sm slate-600">
                         {(metricView === 'openInterest' || metricView === 'both') && (
