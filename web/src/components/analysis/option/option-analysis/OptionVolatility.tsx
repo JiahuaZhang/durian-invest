@@ -225,9 +225,6 @@ export function OptionVolatility({ symbol, chain, spotPrice }: OptionVolatilityP
             <div un-flex="~ justify-between" un-text="xs slate-600">
                 <div un-flex="~ gap-4" >
                     <span>
-                        Spot: <strong>{safeSpotPrice == null ? '--' : formatStrike(safeSpotPrice)}</strong>
-                    </span>
-                    <span>
                         ATM Call IV: <strong un-text="teal-700">{formatVolatility(atmCall?.iv)}</strong>
                     </span>
                     <span>
