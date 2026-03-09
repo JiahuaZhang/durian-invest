@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useIndicators } from './context/ChartContext';
+import { useIndicators } from '../context/ChartContext';
 import { MACDChart } from './plugin/macd/MACDChart';
 import { RSIChart } from './plugin/relative-strength-index/RSIChart';
 

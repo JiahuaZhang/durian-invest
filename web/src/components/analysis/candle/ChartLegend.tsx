@@ -1,4 +1,4 @@
-import { type EMALegend, type FibExtLegend, type FibonacciLegend, type MainLegend, type MarketBiasLegend, type OverlayIndicator, type SMALegend, type VolumeConfig, type VolumeLegend, type VWAPLegend, useLegend, useOverlays } from "./context/ChartContext";
+import { type EMALegend, type FibExtLegend, type FibonacciLegend, type MainLegend, type MarketBiasLegend, type OverlayIndicator, type SMALegend, type VolumeConfig, type VolumeLegend, type VWAPLegend, useLegend, useOverlays } from "../context/ChartContext";
 import { FibonacciMeta, getFibonacciHistoryModeLabel, type FibonacciConfig } from "./plugin/fibonacci/fibonacci";
 import { FibExtMeta, type FibExtConfig } from "./plugin/fibonacci-ext/fibonacci-ext";
 import { MarketBiasMeta, type MarketBiasConfig } from "./plugin/market-bias/market-bias";

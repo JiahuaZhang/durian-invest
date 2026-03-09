@@ -1,5 +1,5 @@
 import { createChart, HistogramSeries } from 'lightweight-charts';
-import type { CandleData } from '../../context/ChartContext';
+import type { CandleData } from '../../../context/ChartContext';
 import type { MetaField } from '../meta';
 import { getDefaultConfig, type DeriveConfig } from '../meta';
 

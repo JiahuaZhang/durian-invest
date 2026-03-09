@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp, Filter } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { MACDConfig, SubIndicator } from '../../context/ChartContext';
+import { MACDConfig, SubIndicator } from '../../../context/ChartContext';
 import { MACDCross, MACDDivergence } from './macd';
 
 type MACDTechnicalSignalsProps = {

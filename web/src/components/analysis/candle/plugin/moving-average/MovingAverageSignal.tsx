@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp, Filter } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { CandleData, OverlayIndicator, useCandleData } from '../../context/ChartContext';
+import { CandleData, OverlayIndicator, useCandleData } from '../../../context/ChartContext';
 import type { MAConfig } from './ma';
 
 export type MACross = {

@@ -1,4 +1,4 @@
-import { useIndicators, useOverlays } from './context/ChartContext';
+import { useIndicators, useOverlays } from '../context/ChartContext';
 import { useMemo } from 'react';
 import { MACDTechnicalSignals } from './plugin/macd/MACDTechnicalSignals';
 import { MovingAverageSignal } from './plugin/moving-average/MovingAverageSignal';

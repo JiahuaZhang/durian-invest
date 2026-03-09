@@ -3,14 +3,9 @@ import { Settings } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { AuxiliaryChart } from './AuxiliaryChart';
 import { ChartLegend } from './ChartLegend';
-import { ChartProvider, useCandleData, useChart, useIndicators, useLegend, useOverlays, type CandleData } from './context/ChartContext';
-import { CandleDataProvider } from './context/ChartDataContext';
+import { ChartProvider, useCandleData, useChart, useIndicators, useLegend, useOverlays } from '../context/ChartContext';
 import type { MAConfig } from './plugin/moving-average/ma';
 import { buildMACrossMarkers } from './plugin/moving-average/ma';
-
-export type CandleAnalysisProps = {
-    readonly data: CandleData[];
-};
 
 const AddButton = ({ onClick, children }: { onClick: () => void, children: React.ReactNode; }) => (
     <button
@@ -215,12 +210,10 @@ function CandleAnalysisInner() {
     );
 }
 
-export function CandleAnalysis({ data }: CandleAnalysisProps) {
+export function CandleAnalysis() {
     return (
-        <CandleDataProvider initialData={data}>
-            <ChartProvider>
-                <CandleAnalysisInner />
-            </ChartProvider>
-        </CandleDataProvider>
+        <ChartProvider>
+            <CandleAnalysisInner />
+        </ChartProvider>
     );
 }

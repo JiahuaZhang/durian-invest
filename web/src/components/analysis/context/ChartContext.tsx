@@ -3,13 +3,13 @@ import { createContext, useCallback, useContext, useMemo, useReducer, useRef, ty
 import {
     defaultFibExtConfig,
     type FibExtConfig
-} from '../plugin/fibonacci-ext/fibonacci-ext';
-import { fibExtIndicator } from '../plugin/fibonacci-ext/fibonacci-ext.indicator';
+} from '../candle/plugin/fibonacci-ext/fibonacci-ext';
+import { fibExtIndicator } from '../candle/plugin/fibonacci-ext/fibonacci-ext.indicator';
 import {
     defaultVWAPConfig,
     type VWAPConfig
-} from '../plugin/volume-weighted-average-price/vwap';
-import { vwapIndicator } from '../plugin/volume-weighted-average-price/vwap.indicator';
+} from '../candle/plugin/volume-weighted-average-price/vwap';
+import { vwapIndicator } from '../candle/plugin/volume-weighted-average-price/vwap.indicator';
 import {
     buildFibonacciRenderData,
     computeFibonacciData,
@@ -20,12 +20,12 @@ import {
     getRetracementLineColor,
     type FibonacciConfig,
     type FibonacciRenderData,
-} from '../plugin/fibonacci/fibonacci';
-import { defaultMACDConfig } from '../plugin/macd/macd';
-import { computeMarketBiasData, defaultMarketBiasConfig, type MarketBiasConfig } from '../plugin/market-bias/market-bias';
-import { computeMAData, createMASeries, getDefaultMAConfig, type MAConfig } from '../plugin/moving-average/ma';
-import { defaultRSIConfig, type RSIConfig } from '../plugin/relative-strength-index/rsi';
-import { computeVolumeData, createVolumeSeries, defaultVolumeConfig, type VolumeConfig } from '../plugin/volume/volume';
+} from '../candle/plugin/fibonacci/fibonacci';
+import { defaultMACDConfig } from '../candle/plugin/macd/macd';
+import { computeMarketBiasData, defaultMarketBiasConfig, type MarketBiasConfig } from '../candle/plugin/market-bias/market-bias';
+import { computeMAData, createMASeries, getDefaultMAConfig, type MAConfig } from '../candle/plugin/moving-average/ma';
+import { defaultRSIConfig, type RSIConfig } from '../candle/plugin/relative-strength-index/rsi';
+import { computeVolumeData, createVolumeSeries, defaultVolumeConfig, type VolumeConfig } from '../candle/plugin/volume/volume';
 import { MACDConfig } from './ChartContext';
 import { useCandleData } from './ChartDataContext';
 
@@ -40,13 +40,13 @@ export type OverlayType = 'volume' | 'sma' | 'ema' | 'market-bias' | 'fibonacci'
 export type IndicatorType = 'macd' | 'rsi';
 
 // Re-export plugin config types for convenience
-export type { FibExtConfig } from '../plugin/fibonacci-ext/fibonacci-ext';
-export type { FibonacciConfig } from '../plugin/fibonacci/fibonacci';
-export type { MACDConfig } from '../plugin/macd/macd';
-export type { MarketBiasConfig } from '../plugin/market-bias/market-bias';
-export type { RSIConfig } from '../plugin/relative-strength-index/rsi';
-export type { VolumeConfig } from '../plugin/volume/volume';
-export type { VWAPConfig } from '../plugin/volume-weighted-average-price/vwap';
+export type { FibExtConfig } from '../candle/plugin/fibonacci-ext/fibonacci-ext';
+export type { FibonacciConfig } from '../candle/plugin/fibonacci/fibonacci';
+export type { MACDConfig } from '../candle/plugin/macd/macd';
+export type { MarketBiasConfig } from '../candle/plugin/market-bias/market-bias';
+export type { RSIConfig } from '../candle/plugin/relative-strength-index/rsi';
+export type { VolumeConfig } from '../candle/plugin/volume/volume';
+export type { VWAPConfig } from '../candle/plugin/volume-weighted-average-price/vwap';
 
 export type OverlayIndicator = {
     id: string;

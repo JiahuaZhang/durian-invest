@@ -1,6 +1,6 @@
 import { createChart, ISeriesApi, LineSeries, Time } from 'lightweight-charts';
 import { EMA, SMA } from 'technicalindicators';
-import type { CandleData, OverlayIndicator } from '../../context/ChartContext';
+import type { CandleData, OverlayIndicator } from '../../../context/ChartContext';
 import { findMACrosses } from './MovingAverageSignal';
 
 import type { MetaField } from '../meta';

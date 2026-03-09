@@ -1,5 +1,5 @@
 import { BollingerBands, EMA, RSI, SMA, WEMA, WMA } from 'technicalindicators';
-import type { CandleData } from '../../context/ChartContext';
+import type { CandleData } from '../../../context/ChartContext';
 import type { MetaField } from '../meta';
 import { getDefaultConfig, type DeriveConfig } from '../meta';
 

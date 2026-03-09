@@ -17,7 +17,7 @@ import {
     type SeriesAttachedParameter,
     type Time,
 } from 'lightweight-charts';
-import type { CandleData } from '../../context/ChartContext';
+import type { CandleData } from '../../../context/ChartContext';
 import {
     computeVWAPData,
     type VWAPConfig,

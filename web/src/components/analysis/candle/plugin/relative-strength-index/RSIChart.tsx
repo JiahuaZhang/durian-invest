@@ -2,7 +2,7 @@ import { createChart, createSeriesMarkers, ISeriesApi, LineSeries } from 'lightw
 import { Settings, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChartConfigPopup } from '../../ChartConfigPopup';
-import { useCandleData, useChart, useIndicators } from '../../context/ChartContext';
+import { useCandleData, useChart, useIndicators } from '../../../context/ChartContext';
 import { buildMetaTabs } from '../meta';
 import { calcRSI, findRSIDivergences, getRSISourceLabel, RSIMeta, RSISmoothing, type RSIConfig, type RSIData, type RSIDivergenceType } from './rsi';
 

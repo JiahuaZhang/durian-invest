@@ -1,7 +1,7 @@
 import { createChart, createSeriesMarkers, HistogramSeries, ISeriesApi, LineSeries } from 'lightweight-charts';
 import { Settings, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useCandleData, useChart, useIndicators } from '../../context/ChartContext';
+import { useCandleData, useChart, useIndicators } from '../../../context/ChartContext';
 import { MACDConfig } from './macd';
 import { ChartConfigPopup } from '../../ChartConfigPopup';
 import { buildMetaTabs } from '../meta';
