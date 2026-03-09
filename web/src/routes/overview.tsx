@@ -1,13 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { MarketOverview, MiniChart, StockHeatmap, StockMarket } from 'react-ts-tradingview-widgets';
+import { MarketOverview, MarketOverviewProps, MiniChart, StockHeatmap, StockMarket } from 'react-ts-tradingview-widgets';
 
 export const Route = createFileRoute('/overview')({
   component: Overview
 })
 
-const commonProps = {
+const commonProps: MarketOverviewProps = {
   width: "100%",
   height: "100%",
+  dateRange: '1M'
 } as const;
 
 
