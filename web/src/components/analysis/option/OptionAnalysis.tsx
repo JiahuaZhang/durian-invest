@@ -321,7 +321,7 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
 
                             return <div key={key} un-border="~ sky-200 rounded-lg" un-bg="sky-50" un-p="2" un-flex="~ col gap-1">
                                 <p un-text="sm" >
-                                    {formatExpirationDate(key, true)}: <span un-font="bold" >${maxPain.strike}</span>
+                                    {formatExpirationDate(key, true)} Max Pain: <span un-font="bold" > ${maxPain.strike}</span>
                                 </p>
                                 <div un-text="xs" un-flex="~ gap-4 wrap">
                                     <span>

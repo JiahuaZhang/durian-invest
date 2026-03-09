@@ -1,5 +1,4 @@
 import { AnalysisChart } from '@/components/analysis/AnalysisChart'
-import { OptionAnalysis } from '@/components/option/OptionAnalysis'
 import { createFileRoute } from '@tanstack/react-router'
 import { CircleAlert } from 'lucide-react'
 import { SymbolSearch } from '../components/SymbolSearch'
@@ -37,8 +36,7 @@ function RouteComponent() {
     return (
         <div un-flex="~ col gap-2" un-p="6">
             <SymbolSearch initialValue={symbol} />
-            <AnalysisChart key={symbol} data={data} />
-            <OptionAnalysis symbol={symbol} />
+            <AnalysisChart key={symbol} data={data} symbol={symbol} />
         </div>
     )
 }
