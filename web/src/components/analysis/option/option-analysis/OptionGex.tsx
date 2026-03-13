@@ -24,10 +24,16 @@ type GammaZone = {
 }
 
 type GexMode = 'overlay' | 'net'
+type GexSource = 'openInterest' | 'volume'
 
 const GEX_MODES: Array<{ value: GexMode; label: string }> = [
     { value: 'overlay', label: 'Call & Put' },
     { value: 'net', label: 'Net' },
+]
+
+const GEX_SOURCES: Array<{ value: GexSource; label: string }> = [
+    { value: 'openInterest', label: 'Open Interest' },
+    { value: 'volume', label: 'Volume' },
 ]
 
 const CALL_GEX_COLOR = '#34d399'
@@ -41,11 +47,12 @@ const SHORT_GAMMA_BG = 'rgba(248, 113, 113, 0.10)'
 
 export function OptionGex({ chain, spotPrice }: OptionGexProps) {
     const [mode, setMode] = useState<GexMode>('overlay')
+    const [gexSource, setGexSource] = useState<GexSource>('openInterest')
     const containerRef = useRef<HTMLDivElement>(null)
 
     const safeSpotPrice = typeof spotPrice === 'number' && Number.isFinite(spotPrice) ? spotPrice : null
 
-    const gexData = useMemo(() => computeGexByStrike(chain, safeSpotPrice), [chain, safeSpotPrice])
+    const gexData = useMemo(() => computeGexByStrike(chain, safeSpotPrice, gexSource), [chain, safeSpotPrice, gexSource])
 
     const gammaZones = useMemo(() => findGammaZones(gexData), [gexData])
 
@@ -176,7 +183,7 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
             window.removeEventListener('resize', resize)
             chart.remove()
         }
-    }, [gexData, safeSpotPrice, gammaZones, mode])
+    }, [gexData, safeSpotPrice, gammaZones, mode, gexSource])
 
     if (gexData.length === 0) {
         return (
@@ -193,34 +200,60 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
 
     return (
         <section un-border="~ slate-200 rounded-lg" un-p="4" un-flex="~ col gap-3">
-            <header un-flex="~ justify-between items-center wrap gap-2">
+            <header un-flex="~ justify-between">
                 <h3 un-text="xl slate-900" un-font="bold">
                     Gamma Exposure (GEX)
                 </h3>
 
                 <div un-flex="~ gap-2">
-                    {GEX_MODES.map(option => {
-                        const active = mode === option.value
-                        return (
-                            <button
-                                key={option.value}
-                                type="button"
-                                onClick={() => setMode(option.value)}
-                                un-p="x-3 y-1.5"
-                                un-rounded="lg"
-                                un-border="~ slate-200"
-                                un-text={`sm ${active ? 'white' : 'slate-600'}`}
-                                un-bg={active ? 'blue-600' : 'white hover:slate-50'}
-                                un-cursor="pointer"
-                            >
-                                {option.label}
-                            </button>
-                        )
-                    })}
+                    <div un-flex="~ gap-2">
+                        {GEX_MODES.map(option => {
+                            const active = mode === option.value
+                            return (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => setMode(option.value)}
+                                    un-p="x-3 y-1.5"
+                                    un-rounded="lg"
+                                    un-border="~ slate-200"
+                                    un-text={`sm ${active ? 'white' : 'slate-600'}`}
+                                    un-bg={active ? 'blue-600' : 'white hover:slate-50'}
+                                    un-cursor="pointer"
+                                >
+                                    {option.label}
+                                </button>
+                            )
+                        })}
+                    </div>
+
+                    <div un-w="0.5" un-h="full" un-bg="slate-200" />
+
+                    <div un-flex="~ gap-2">
+                        {GEX_SOURCES.map(option => {
+                            const active = gexSource === option.value
+                            return (
+                                <button
+                                    key={option.value}
+                                    type="button"
+                                    onClick={() => setGexSource(option.value)}
+                                    un-p="x-3 y-1.5"
+                                    un-rounded="lg"
+                                    un-border="~ slate-200"
+                                    un-text={`xs ${active ? 'white' : 'slate-600'}`}
+                                    un-bg={active ? 'green-600' : 'white hover:slate-50'}
+                                    un-cursor="pointer"
+                                >
+                                    {option.label}
+                                </button>
+                            )
+                        })}
+                    </div>
                 </div>
+
             </header>
 
-            <div key={mode} ref={containerRef} un-w="full" un-h="88" />
+            <div key={`${mode}-${gexSource}`} ref={containerRef} un-w="full" un-h="88" />
 
             <div un-flex="~ justify-between wrap" un-text="xs slate-600">
                 <div un-flex="~ gap-4">
@@ -300,15 +333,15 @@ function calculateGamma(
     return nd1 / (S * sigma * Math.sqrt(T))
 }
 
-function computeGexByStrike(chain: YahooOptionChainEntry | null, spotPrice: number | null): GexPoint[] {
+function computeGexByStrike(chain: YahooOptionChainEntry | null, spotPrice: number | null, source: GexSource = 'openInterest'): GexPoint[] {
     if (!chain || spotPrice == null || spotPrice <= 0) return []
 
     const now = Date.now() / 1000
     const strikeMap = new Map<number, { callGex: number; putGex: number }>()
 
     const processOption = (option: YahooOption, isCall: boolean) => {
-        const oi = option.openInterest ?? 0
-        if (oi <= 0) return
+        const weight = (source === 'volume' ? option.volume : option.openInterest) ?? 0
+        if (weight <= 0) return
 
         const iv = option.impliedVolatility ?? 0
         if (iv <= 0) return
@@ -327,7 +360,7 @@ function computeGexByStrike(chain: YahooOptionChainEntry | null, spotPrice: numb
         if (T <= 0) return
 
         const gamma = calculateGamma(spotPrice, option.strike, T, iv)
-        const gexValue = gamma * oi * 100 * spotPrice
+        const gexValue = gamma * weight * 100 * spotPrice
 
         const existing = strikeMap.get(option.strike) ?? { callGex: 0, putGex: 0 }
         if (isCall) {
