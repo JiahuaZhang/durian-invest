@@ -238,18 +238,18 @@ export function OptionVolatility({ symbol, chain, spotPrice }: OptionVolatilityP
                 <div un-flex="~ gap-4">
                     {(view === 'both' || view === 'call') && (
                         <span un-flex="~ items-center gap-1">
-                            <i un-inline-block un-w="2.5" un-h="0.5" style={{ backgroundColor: CALL_COLOR }} />
+                            <i un-w="2.5" un-h="0.5" style={{ backgroundColor: CALL_COLOR }} />
                             Calls IV
                         </span>
                     )}
                     {(view === 'both' || view === 'put') && (
                         <span un-flex="~ items-center gap-1">
-                            <i un-inline-block un-w="2.5" un-h="0.5" style={{ backgroundColor: PUT_COLOR }} />
+                            <i un-w="2.5" un-h="0.5" style={{ backgroundColor: PUT_COLOR }} />
                             Puts IV
                         </span>
                     )}
                     <span un-flex="~ items-center gap-1">
-                        <i un-inline-block un-w="2.5" un-h="0.5" style={{ backgroundColor: HISTORICAL_COLOR }} />
+                        <i un-w="2.5" un-h="0.5" style={{ backgroundColor: HISTORICAL_COLOR }} />
                         30D Historical Vol
                     </span>
                 </div>
