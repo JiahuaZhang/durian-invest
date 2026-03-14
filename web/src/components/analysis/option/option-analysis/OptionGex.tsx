@@ -357,7 +357,7 @@ function computeGexByStrike(chain: YahooOptionChainEntry | null, spotPrice: numb
         if (T <= 0) return
 
         const gamma = calculateGamma(spotPrice, option.strike, T, iv)
-        const gexValue = gamma * weight * 100 * spotPrice
+        const gexValue = gamma * weight * 100 * spotPrice * 0.01 * spotPrice
 
         const existing = strikeMap.get(option.strike) ?? { callGex: 0, putGex: 0 }
         if (isCall) {

@@ -265,8 +265,6 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
             {!loading && !error && strikes.length > 0 && (
                 <>
                     <OptionBarChart strikes={strikes} mode={mode} metricView={metricView} />
-                    <OptionGex chain={activeChain} spotPrice={quote?.regularMarketPrice} />
-                    <OptionVolatility symbol={normalizedSymbol} chain={activeChain} spotPrice={quote?.regularMarketPrice} />
 
                     <div un-grid="~" un-text="sm slate-600">
                         {(metricView === 'openInterest' || metricView === 'both') && (
@@ -304,6 +302,9 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
                     </div>
                 </>
             )}
+
+            <OptionGex chain={activeChain} spotPrice={quote?.regularMarketPrice} />
+            <OptionVolatility symbol={normalizedSymbol} chain={activeChain} spotPrice={quote?.regularMarketPrice} />
 
             <div un-flex="~ col gap-2">
                 {
