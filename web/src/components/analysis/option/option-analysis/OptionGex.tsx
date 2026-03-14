@@ -1,5 +1,6 @@
 import type { YahooOption, YahooOptionChainEntry } from '@/utils/yahoo'
 import { ColorType, createChart, HistogramSeries, LineSeries, type Time } from 'lightweight-charts'
+import { Filter } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { BackgroundZone } from '../../chart/BackgroundZone'
 import { VertLine } from '../../chart/VerticalLine'
@@ -48,13 +49,18 @@ const SHORT_GAMMA_BG = 'rgba(248, 113, 113, 0.10)'
 export function OptionGex({ chain, spotPrice }: OptionGexProps) {
     const [mode, setMode] = useState<GexMode>('overlay')
     const [gexSource, setGexSource] = useState<GexSource>('openInterest')
+    const [isFilterEnabled, setIsFilterEnabled] = useState(true)
     const containerRef = useRef<HTMLDivElement>(null)
 
     const safeSpotPrice = typeof spotPrice === 'number' && Number.isFinite(spotPrice) ? spotPrice : null
 
     const gexData = computeGexByStrike(chain, safeSpotPrice, gexSource)
+    const threshold = Math.max(...gexData.map(point => point.totalGex)) * 0.01
+    const filteredData = isFilterEnabled
+        ? gexData.filter(point => Math.abs(point.totalGex) > threshold)
+        : gexData
 
-    const gammaZones = findGammaZones(gexData)
+    const gammaZones = findGammaZones(filteredData)
 
     const totalNetGex = gexData.reduce((sum, point) => sum + point.totalGex, 0)
 
@@ -203,6 +209,24 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
                 </h3>
 
                 <div un-flex="~ gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setIsFilterEnabled(!isFilterEnabled)}
+                        un-flex="~ items-center gap-1.5"
+                        un-p="x-3 y-1.5"
+                        un-rounded="lg"
+                        un-border="~ slate-200"
+                        un-text={`sm ${isFilterEnabled ? 'white' : 'slate-600'}`}
+                        un-bg={isFilterEnabled ? 'blue-600' : 'white hover:slate-50'}
+                        un-cursor="pointer"
+                        title="Toggle 1% Threshold Filter"
+                    >
+                        <Filter un-w="4" un-h="4" />
+                        Filter
+                    </button>
+
+                    <div un-w="0.5" un-h="full" un-bg="slate-200" />
+
                     <div un-flex="~ gap-2">
                         {GEX_MODES.map(option => {
                             const active = mode === option.value
