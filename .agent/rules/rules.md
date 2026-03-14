@@ -7,6 +7,7 @@
 3.  **Minimal Configuration**: Stick to library defaults whenever possible. Do not provide explicit configuration options (e.g., chart colors, grids, layouts) unless they differ significantly from the default or are strictly necessary for functionality. Avoid "boilerplate" config.
 
 ## React Patterns
+-   **React Compiler**: This project uses React Compiler (`babel-plugin-react-compiler`). Do **not** use manual memoization hooks like `useMemo`, `useCallback`, or `React.memo`. Write simple, idiomatic React code and let the compiler handle optimizations.
 -   **State Management**: Minimize `useState`. Consolidate related data into single objects (e.g., `Legend` object) rather than multiple atomic states.
 -   **Refs vs Vars**: Inside `useEffect`, if a variable like a lookup Map doesn't need to persist across renders or be accessed by other effects, just define it as a local `const` or `let` instead of `useRef`.
 

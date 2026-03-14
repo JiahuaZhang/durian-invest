@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Filter } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { MACDConfig, SubIndicator } from '../../../context/ChartContext';
 import { MACDCross, MACDDivergence } from './macd';
 
@@ -16,13 +16,10 @@ export function MACDTechnicalSignals({ indicator }: MACDTechnicalSignalsProps) {
     const crosses: MACDCross[] = indicator.data?.crosses ?? [];
     const divergences: MACDDivergence[] = indicator.data?.divergences ?? [];
 
-    const filteredCrosses = useMemo(() => {
-        if (!filterZeroCross) return crosses;
-        return crosses.filter(cross =>
-            (cross.type === 'golden' && cross.macdValue > 0) ||
-            (cross.type === 'dead' && cross.macdValue < 0)
-        );
-    }, [crosses, filterZeroCross]);
+    const filteredCrosses = filterZeroCross ? crosses.filter(cross =>
+        (cross.type === 'golden' && cross.macdValue > 0) ||
+        (cross.type === 'dead' && cross.macdValue < 0)
+    ) : crosses;
 
     return (
         <>

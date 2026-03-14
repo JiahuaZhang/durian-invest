@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { CandlestickSeries, createChart, LineSeries } from 'lightweight-charts'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { calculateDistributionStats, normalPdf } from '../utils/statistics'
 import { getHistoricalData, type OHLCData } from '../utils/yahoo-history'
 
@@ -83,15 +83,15 @@ function HistoryPage() {
     const [inputSymbol, setInputSymbol] = useState(searchSymbol || '^SPX')
     const [todayChange, setTodayChange] = useState('')
 
-    const dailyChanges = useMemo(() => computeDailyChanges(data), [data])
-    const changeValues = useMemo(() => dailyChanges.map(d => d.changePercent), [dailyChanges])
+    const dailyChanges = computeDailyChanges(data)
+    const changeValues = dailyChanges.map(d => d.changePercent)
 
-    const stats = useMemo(() => calculateDistributionStats(changeValues), [changeValues])
+    const stats = calculateDistributionStats(changeValues)
 
-    const outliers3 = useMemo(() => findOutliers(dailyChanges, 3), [dailyChanges])
-    const outliers5 = useMemo(() => findOutliers(dailyChanges, 5), [dailyChanges])
+    const outliers3 = findOutliers(dailyChanges, 3)
+    const outliers5 = findOutliers(dailyChanges, 5)
 
-    const lastDayStats = useMemo(() => {
+    const lastDayStats = (() => {
         if (dailyChanges.length === 0) return null
         const lastDay = dailyChanges[dailyChanges.length - 1]
         const zScore = stats.stdDev !== 0 ? (lastDay.changePercent - stats.mean) / stats.stdDev : 0
@@ -101,21 +101,21 @@ function HistoryPage() {
             changePercent: lastDay.changePercent,
             zScore
         }
-    }, [dailyChanges, stats])
+    })()
 
-    const upDownRatio = useMemo(() => {
+    const upDownRatio = (() => {
         const upDays = changeValues.filter(v => v > 0).length
         const downDays = changeValues.filter(v => v < 0).length
         const flatDays = changeValues.filter(v => v === 0).length
         const upPercent = (upDays / changeValues.length) * 100
         return { upDays, downDays, flatDays, upPercent }
-    }, [changeValues])
+    })()
 
-    const todayZScore = useMemo(() => {
+    const todayZScore = (() => {
         const val = parseFloat(todayChange)
         if (isNaN(val) || stats.stdDev === 0) return null
         return (val - stats.mean) / stats.stdDev
-    }, [todayChange, stats])
+    })()
 
     const handleSymbolSubmit = (e: React.FormEvent) => {
         e.preventDefault()

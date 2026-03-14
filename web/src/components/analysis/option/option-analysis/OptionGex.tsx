@@ -1,6 +1,6 @@
 import type { YahooOption, YahooOptionChainEntry } from '@/utils/yahoo'
 import { ColorType, createChart, HistogramSeries, LineSeries, type Time } from 'lightweight-charts'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BackgroundZone } from '../../chart/BackgroundZone'
 import { VertLine } from '../../chart/VerticalLine'
 import { formatCompactNumber, formatStrike } from './utils'
@@ -52,14 +52,11 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
 
     const safeSpotPrice = typeof spotPrice === 'number' && Number.isFinite(spotPrice) ? spotPrice : null
 
-    const gexData = useMemo(() => computeGexByStrike(chain, safeSpotPrice, gexSource), [chain, safeSpotPrice, gexSource])
+    const gexData = computeGexByStrike(chain, safeSpotPrice, gexSource)
 
-    const gammaZones = useMemo(() => findGammaZones(gexData), [gexData])
+    const gammaZones = findGammaZones(gexData)
 
-    const totalNetGex = useMemo(
-        () => gexData.reduce((sum, point) => sum + point.totalGex, 0),
-        [gexData],
-    )
+    const totalNetGex = gexData.reduce((sum, point) => sum + point.totalGex, 0)
 
     useEffect(() => {
         if (!containerRef.current || gexData.length === 0) return

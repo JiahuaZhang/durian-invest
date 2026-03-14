@@ -1,11 +1,18 @@
-import { createChart, createSeriesMarkers, HistogramSeries, ISeriesApi, LineSeries } from 'lightweight-charts';
+import type { createChart } from 'lightweight-charts';
 import { Settings, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCandleData, useChart, useIndicators } from '../../../context/ChartContext';
-import { MACDConfig } from './macd';
 import { ChartConfigPopup } from '../../ChartConfigPopup';
 import { buildMetaTabs } from '../meta';
-import { calcMACD, findMACDCrosses, findMACDDivergences, MACDData, MACDMeta } from './macd';
+import { defaultMACDConfig, MACDConfig, MACDMeta, type MACDData } from './macd';
+import {
+    computeMACDData,
+    createMACDChart,
+    subscribeLegend,
+    syncCrosshair,
+    syncTimeScale,
+    type MACDSeriesRefs,
+} from './macd.indicator';
 
 type MACDChartProps = {
     id: string;
@@ -13,12 +20,8 @@ type MACDChartProps = {
 
 export function MACDChart({ id }: MACDChartProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const seriesRef = useRef<{
-        histogram?: ISeriesApi<"Histogram">;
-        macd?: ISeriesApi<"Line">;
-        signal?: ISeriesApi<"Line">;
-    }>({});
-    const [chart, setChart] = useState<ReturnType<typeof createChart> | null>(null);
+    const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+    const seriesRef = useRef<MACDSeriesRefs | null>(null);
     const [legend, setLegend] = useState<MACDData | null>(null);
     const [configOpen, setConfigOpen] = useState(false);
     const cogRef = useRef<HTMLButtonElement>(null);
@@ -28,229 +31,55 @@ export function MACDChart({ id }: MACDChartProps) {
     const { getIndicator, updateIndicator, removeIndicator, updateIndicatorConfig } = useIndicators();
 
     const indicator = getIndicator(id);
-    const macdConfig = indicator?.config as MACDConfig;
+    const macdConfig = indicator?.config as MACDConfig ?? defaultMACDConfig;
 
-    const macdData = useMemo(() => {
-        if (!macdConfig || data.length === 0) return [];
-        return calcMACD(data, {
-            fast: macdConfig.fastPeriod,
-            slow: macdConfig.slowPeriod,
-            signal: macdConfig.signalPeriod,
-        });
-    }, [data, macdConfig?.fastPeriod, macdConfig?.slowPeriod, macdConfig?.signalPeriod]);
+    const configTabs = buildMetaTabs(MACDMeta, macdConfig, (updates) => updateIndicatorConfig(id, updates));
 
-    const crosses = useMemo(() => findMACDCrosses(macdData), [macdData]);
-
-    const divergences = useMemo(() => {
-        if (!macdConfig?.showDivergences || data.length === 0) return [];
-        return findMACDDivergences(data, macdData, {
-            pivotLookbackLeft: macdConfig.pivotLookbackLeft,
-            pivotLookbackRight: macdConfig.pivotLookbackRight,
-            rangeMin: macdConfig.rangeMin,
-            rangeMax: macdConfig.rangeMax,
-            dontTouchZero: macdConfig.dontTouchZero,
-        });
-    }, [data, macdData, macdConfig?.showDivergences, macdConfig?.pivotLookbackLeft,
-        macdConfig?.pivotLookbackRight, macdConfig?.rangeMin, macdConfig?.rangeMax, macdConfig?.dontTouchZero]);
-
-    const configTabs = useMemo(() => {
-        if (!macdConfig) return [];
-        return buildMetaTabs(MACDMeta, macdConfig, (updates) => updateIndicatorConfig(id, updates));
-    }, [id, macdConfig, updateIndicatorConfig]);
-
-    // Sync computed data to context
+    // Single effect: compute data, create chart, set up syncing, legend
     useEffect(() => {
-        updateIndicator(id, { data: { macdData, crosses, divergences } });
-    }, [id, macdData, crosses, divergences, updateIndicator]);
+        if (!containerRef.current || data.length === 0) return;
 
-    // Create chart
-    useEffect(() => {
-        if (!containerRef.current || data.length === 0 || !macdConfig) return;
+        // Compute
+        const { macdData, crosses, divergences } = computeMACDData(data, macdConfig);
 
-        const newChart = createChart(containerRef.current);
+        // Create chart
+        const { chart, series } = createMACDChart(containerRef.current, macdData, macdConfig, divergences);
+        chartRef.current = chart;
+        seriesRef.current = series;
 
-        // 4-color histogram
-        const histogramData = macdData.filter(d => d.histogram !== undefined).map((d, i, arr) => {
-            const hist = d.histogram ?? 0;
-            const prevHist = i > 0 ? (arr[i - 1].histogram ?? 0) : 0;
-            const isGrowing = hist > prevHist;
-
-            let color: string;
-            if (hist >= 0) {
-                color = isGrowing ? '#26A69A' : '#B2DFDB';
-            } else {
-                color = isGrowing ? '#FFCDD2' : '#FF5252';
-            }
-
-            return { time: d.time, value: hist, color };
+        // Push data to context (one-time, not in a dependency-tracked way)
+        updateIndicator(id, {
+            chart,
+            series,
+            data: { macdData, crosses, divergences },
         });
 
-        const histogramSeries = newChart.addSeries(HistogramSeries, {
-            priceLineVisible: false,
-            lastValueVisible: false,
-        });
-        histogramSeries.setData(histogramData as any);
+        // Set up syncing
+        const cleanups: (() => void)[] = [];
 
-        const macdLineSeries = newChart.addSeries(LineSeries, {
-            color: macdConfig.macdColor,
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false,
-        });
-        macdLineSeries.setData(macdData.map(d => ({ time: d.time, value: d.macd })) as any);
+        const mainChart = mainChartRef.current;
+        if (mainChart) {
+            cleanups.push(syncTimeScale(chart, mainChart, syncingRef));
 
-        const signalLineSeries = newChart.addSeries(LineSeries, {
-            color: macdConfig.signalColor,
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false,
-        });
-        signalLineSeries.setData(macdData.map(d => ({ time: d.time, value: d.signal })) as any);
-
-        // Add divergence lines and markers
-        if (macdConfig.showDivergences && divergences.length > 0) {
-            divergences.forEach(div => {
-                const color = div.type === 'bullish' ? macdConfig.divergenceBullColor : macdConfig.divergenceBearColor;
-                const startTime = macdData[div.startIndex]?.time;
-                const endTime = macdData[div.endIndex]?.time;
-
-                if (startTime && endTime) {
-                    const lineSeries = newChart.addSeries(LineSeries, {
-                        color,
-                        lineWidth: 2,
-                        priceLineVisible: false,
-                        lastValueVisible: false,
-                        crosshairMarkerVisible: false,
-                    });
-                    lineSeries.setData([
-                        { time: startTime, value: div.startMacd },
-                        { time: endTime, value: div.endMacd },
-                    ] as any);
-                }
-            });
-
-            const markers = divergences
-                .map(div => {
-                    const endTime = macdData[div.endIndex]?.time;
-                    if (!endTime) return null;
-                    return {
-                        time: endTime,
-                        position: div.type === 'bullish' ? 'belowBar' as const : 'aboveBar' as const,
-                        color: div.type === 'bullish' ? macdConfig.divergenceBullColor : macdConfig.divergenceBearColor,
-                        shape: div.type === 'bullish' ? 'arrowUp' as const : 'arrowDown' as const,
-                        text: div.type === 'bullish' ? 'Bull' : 'Bear',
-                    };
-                })
-                .filter((m): m is NonNullable<typeof m> => m !== null)
-                .sort((a, b) => String(a.time).localeCompare(String(b.time)));
-
-            if (markers.length > 0) {
-                createSeriesMarkers(macdLineSeries, markers as any);
+            const candleSeries = candleSeriesRef.current;
+            if (candleSeries) {
+                cleanups.push(syncCrosshair(chart, mainChart, series.histogram, candleSeries));
             }
         }
 
-        seriesRef.current = { histogram: histogramSeries, macd: macdLineSeries, signal: signalLineSeries };
-        setChart(newChart);
-
-        // Register with context
-        updateIndicator(id, { chart: newChart, series: seriesRef.current });
+        // Legend
+        cleanups.push(subscribeLegend(chart, series, setLegend));
 
         return () => {
-            newChart.remove();
-            setChart(null);
+            cleanups.forEach(fn => fn());
+            chart.remove();
+            chartRef.current = null;
+            seriesRef.current = null;
         };
-    }, [id, data, macdData, divergences, macdConfig?.macdColor, macdConfig?.signalColor,
-        macdConfig?.showDivergences, macdConfig?.divergenceBullColor, macdConfig?.divergenceBearColor, updateIndicator]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, data, macdConfig]);
 
-    // Sync time scale with main chart
-    useEffect(() => {
-        const mainChart = mainChartRef.current;
-        if (!chart || !mainChart) return;
-
-        const handleMainRangeChange = (range: any) => {
-            if (syncingRef.current || !range) return;
-            syncingRef.current = true;
-            chart.timeScale().setVisibleLogicalRange(range);
-            syncingRef.current = false;
-        };
-
-        const handleAuxRangeChange = (range: any) => {
-            if (syncingRef.current || !range) return;
-            syncingRef.current = true;
-            mainChart.timeScale().setVisibleLogicalRange(range);
-            syncingRef.current = false;
-        };
-
-        mainChart.timeScale().subscribeVisibleLogicalRangeChange(handleMainRangeChange);
-        chart.timeScale().subscribeVisibleLogicalRangeChange(handleAuxRangeChange);
-
-        return () => {
-            mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(handleMainRangeChange);
-            chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleAuxRangeChange);
-        };
-    }, [chart, mainChartRef, syncingRef]);
-
-    // Sync crosshair with main chart
-    useEffect(() => {
-        const mainChart = mainChartRef.current;
-        const candleSeries = candleSeriesRef.current;
-        if (!chart || !mainChart) return;
-        const { histogram } = seriesRef.current;
-        if (!histogram || !candleSeries) return;
-
-        const mainToAux = (param: any) => {
-            if (param.time) {
-                chart.setCrosshairPosition(0, param.time, histogram);
-            } else {
-                chart.clearCrosshairPosition();
-            }
-        };
-
-        const auxToMain = (param: any) => {
-            if (param.time) {
-                mainChart.setCrosshairPosition(0, param.time, candleSeries);
-            } else {
-                mainChart.clearCrosshairPosition();
-            }
-        };
-
-        mainChart.subscribeCrosshairMove(mainToAux);
-        chart.subscribeCrosshairMove(auxToMain);
-
-        return () => {
-            mainChart.unsubscribeCrosshairMove(mainToAux);
-            chart.unsubscribeCrosshairMove(auxToMain);
-        };
-    }, [chart, mainChartRef, candleSeriesRef]);
-
-    // Handle crosshair for legend
-    useEffect(() => {
-        if (!chart) return;
-
-        const { histogram, macd, signal } = seriesRef.current;
-        if (!histogram || !macd || !signal) return;
-
-        const handleCrosshair = (param: any) => {
-            if (param.time) {
-                const h = param.seriesData.get(histogram) as any;
-                const m = param.seriesData.get(macd) as any;
-                const s = param.seriesData.get(signal) as any;
-                setLegend({
-                    time: param.time,
-                    histogram: h?.value,
-                    macd: m?.value,
-                    signal: s?.value,
-                });
-            } else {
-                setLegend(null);
-            }
-        };
-
-        chart.subscribeCrosshairMove(handleCrosshair);
-        return () => chart.unsubscribeCrosshairMove(handleCrosshair);
-    }, [chart]);
-
-    if (!indicator || !macdConfig) return null;
+    if (!indicator) return null;
 
     return (
         <div

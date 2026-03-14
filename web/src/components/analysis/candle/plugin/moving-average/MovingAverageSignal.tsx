@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Filter } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CandleData, OverlayIndicator, useCandleData } from '../../../context/ChartContext';
 import type { MAConfig } from './ma';
 
@@ -61,14 +61,13 @@ export function MovingAverageSignal({ overlay }: MovingAverageSignalProps) {
 
     const label = overlay.type === 'sma' ? 'Simple' : 'Exponential';
 
-    const allCrosses = useMemo(() => findMACrosses(data, maData), [data, maData]);
+    const allCrosses = findMACrosses(data, maData);
 
-    const crosses = useMemo(() => {
-        if (!filterOneYear) return allCrosses;
+    const crosses = filterOneYear ? allCrosses.filter(cross => {
         const oneYearAgo = new Date();
         oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-        return allCrosses.filter(cross => new Date(cross.date) >= oneYearAgo);
-    }, [allCrosses, filterOneYear]);
+        return new Date(cross.date) >= oneYearAgo;
+    }) : allCrosses;
 
     return (
         <div un-flex='~ col gap-2'>

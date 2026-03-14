@@ -1,6 +1,6 @@
 import { getOptionOpenInterestData, type YahooOptionChainResult } from '@/utils/yahoo'
 import { RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CHART_MODES, METRIC_VIEWS } from './option-analysis/constants'
 import { OptionBarChart } from './option-analysis/OptionBarChart'
 import { OptionGex } from './option-analysis/OptionGex'
@@ -34,54 +34,51 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
     const [maxPainCache, setMaxPainCache] = useState<Map<number, MaxPainResult>>(new Map())
     const requestIdRef = useRef(0)
 
-    const loadOptionChain = useCallback(
-        async (date?: number, forceRefresh = false): Promise<YahooOptionChainResult | null> => {
-            const key = buildCacheKey(normalizedSymbol, date)
+    async function loadOptionChain(date?: number, forceRefresh = false): Promise<YahooOptionChainResult | null> {
+        const key = buildCacheKey(normalizedSymbol, date)
 
-            if (!forceRefresh) {
-                const cached = cacheRef.current.get(key)
-                if (cached) {
-                    setChainResult(cached)
-                    setError(null)
-                    return cached
-                }
+        if (!forceRefresh) {
+            const cached = cacheRef.current.get(key)
+            if (cached) {
+                setChainResult(cached)
+                setError(null)
+                return cached
+            }
+        }
+
+        const requestId = ++requestIdRef.current
+        setLoading(true)
+        setError(null)
+
+        try {
+            const response = await getOptionOpenInterestData({
+                data: {
+                    symbol: normalizedSymbol,
+                    date,
+                },
+            })
+
+            if (requestId !== requestIdRef.current) return null
+
+            cacheRef.current.set(key, response)
+            const responseDate = response.options[0]?.expirationDate
+            if (typeof responseDate === 'number') {
+                cacheRef.current.set(buildCacheKey(normalizedSymbol, responseDate), response)
             }
 
-            const requestId = ++requestIdRef.current
-            setLoading(true)
-            setError(null)
-
-            try {
-                const response = await getOptionOpenInterestData({
-                    data: {
-                        symbol: normalizedSymbol,
-                        date,
-                    },
-                })
-
-                if (requestId !== requestIdRef.current) return null
-
-                cacheRef.current.set(key, response)
-                const responseDate = response.options[0]?.expirationDate
-                if (typeof responseDate === 'number') {
-                    cacheRef.current.set(buildCacheKey(normalizedSymbol, responseDate), response)
-                }
-
-                setChainResult(response)
-                return response
-            } catch (err: unknown) {
-                if (requestId !== requestIdRef.current) return null
-                const message = err instanceof Error ? err.message : 'Failed to load option chain.'
-                setError(message)
-                return null
-            } finally {
-                if (requestId === requestIdRef.current) {
-                    setLoading(false)
-                }
+            setChainResult(response)
+            return response
+        } catch (err: unknown) {
+            if (requestId !== requestIdRef.current) return null
+            const message = err instanceof Error ? err.message : 'Failed to load option chain.'
+            setError(message)
+            return null
+        } finally {
+            if (requestId === requestIdRef.current) {
+                setLoading(false)
             }
-        },
-        [normalizedSymbol],
-    )
+        }
+    }
 
     useEffect(() => {
         setSelectedDate(null)
@@ -99,33 +96,28 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
         return () => {
             mounted = false
         }
-    }, [loadOptionChain, normalizedSymbol])
+    }, [normalizedSymbol])
 
-    const expirationDates = useMemo(
-        () => (chainResult?.expirationDates ?? []).slice().sort((a, b) => a - b),
-        [chainResult],
-    )
+    const expirationDates = (chainResult?.expirationDates ?? []).slice().sort((a, b) => a - b)
 
-    const activeChain = useMemo(() => {
+    const activeChain = (() => {
         if (!chainResult || chainResult.options.length === 0) return null
         if (selectedDate == null) return getFirstChain(chainResult)
         return findChainForDate(chainResult, selectedDate)
-    }, [chainResult, selectedDate])
+    })()
 
-    const strikes = useMemo(() => deriveStrikeMetrics(activeChain), [activeChain])
+    const strikes = deriveStrikeMetrics(activeChain)
 
-    const totals = useMemo(() => {
-        return strikes.reduce(
-            (acc, strike) => {
-                acc.callOpenInterest += strike.callOpenInterest
-                acc.putOpenInterest += strike.putOpenInterest
-                acc.callVolume += strike.callVolume
-                acc.putVolume += strike.putVolume
-                return acc
-            },
-            { callOpenInterest: 0, putOpenInterest: 0, callVolume: 0, putVolume: 0 },
-        )
-    }, [strikes])
+    const totals = strikes.reduce(
+        (acc, strike) => {
+            acc.callOpenInterest += strike.callOpenInterest
+            acc.putOpenInterest += strike.putOpenInterest
+            acc.callVolume += strike.callVolume
+            acc.putVolume += strike.putVolume
+            return acc
+        },
+        { callOpenInterest: 0, putOpenInterest: 0, callVolume: 0, putVolume: 0 },
+    )
 
     useEffect(() => {
         if (!activeChain) return

@@ -5,7 +5,7 @@ import { MarketBiasMeta, type MarketBiasConfig } from "./plugin/market-bias/mark
 import type { MAConfig } from "./plugin/moving-average/ma";
 import { VWAPMeta, type VWAPConfig } from "./plugin/volume-weighted-average-price/vwap";
 import { Eye, EyeOff, Settings, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { ChartConfigPopup } from "./ChartConfigPopup";
 import { buildMetaTabs } from "./plugin/meta";
 import { MAMeta } from "./plugin/moving-average/ma";
@@ -89,59 +89,59 @@ function OverlayLegendItem({ overlay, overlayLegend, color }: OverlayLegendItemP
     const { toggleOverlay, removeOverlay, updateOverlayConfig } = useOverlays();
     
     const value = getOverlayValueFromLegend(overlay.type, overlayLegend);
-    const volumeTabs = useMemo(() => {
+    const volumeTabs = (() => {
         if (overlay.type !== 'volume') return [];
         return buildMetaTabs(
             VolumeMeta,
             overlay.config as VolumeConfig,
             (updates) => updateOverlayConfig(overlay.id, updates)
         );
-    }, [overlay.id, overlay.type, overlay.config, updateOverlayConfig]);
+    })();
 
-    const maTabs = useMemo(() => {
+    const maTabs = (() => {
         if (overlay.type !== 'sma' && overlay.type !== 'ema') return [];
         return buildMetaTabs(
             MAMeta,
             overlay.config as MAConfig,
             (updates) => updateOverlayConfig(overlay.id, updates)
         );
-    }, [overlay.id, overlay.type, overlay.config, updateOverlayConfig]);
+    })();
 
-    const marketBiasTabs = useMemo(() => {
+    const marketBiasTabs = (() => {
         if (overlay.type !== 'market-bias') return [];
         return buildMetaTabs(
             MarketBiasMeta,
             overlay.config as MarketBiasConfig,
             (updates) => updateOverlayConfig(overlay.id, updates)
         );
-    }, [overlay.id, overlay.type, overlay.config, updateOverlayConfig]);
+    })();
 
-    const fibonacciTabs = useMemo(() => {
+    const fibonacciTabs = (() => {
         if (overlay.type !== 'fibonacci') return [];
         return buildMetaTabs(
             FibonacciMeta,
             overlay.config as FibonacciConfig,
             (updates) => updateOverlayConfig(overlay.id, updates)
         );
-    }, [overlay.id, overlay.type, overlay.config, updateOverlayConfig]);
+    })();
 
-    const fibExtTabs = useMemo(() => {
+    const fibExtTabs = (() => {
         if (overlay.type !== 'fibonacci-ext') return [];
         return buildMetaTabs(
             FibExtMeta,
             overlay.config as FibExtConfig,
             (updates) => updateOverlayConfig(overlay.id, updates)
         );
-    }, [overlay.id, overlay.type, overlay.config, updateOverlayConfig]);
+    })();
 
-    const vwapTabs = useMemo(() => {
+    const vwapTabs = (() => {
         if (overlay.type !== 'vwap') return [];
         return buildMetaTabs(
             VWAPMeta,
             overlay.config as VWAPConfig,
             (updates) => updateOverlayConfig(overlay.id, updates)
         );
-    }, [overlay.id, overlay.type, overlay.config, updateOverlayConfig]);
+    })();
 
     return (
         <div 
@@ -254,7 +254,7 @@ function OverlayLegendItem({ overlay, overlayLegend, color }: OverlayLegendItemP
 export function ChartLegend() {
     const { mainLegend: legend, overlayLegends } = useLegend();
     const { overlays: overlaysRecord } = useOverlays();
-    const overlays = useMemo(() => Object.values(overlaysRecord), [overlaysRecord]);
+    const overlays = Object.values(overlaysRecord);
     
     if (!legend && overlays.length === 0) return null;
 

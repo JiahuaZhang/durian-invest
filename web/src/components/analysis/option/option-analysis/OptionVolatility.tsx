@@ -1,6 +1,6 @@
 import type { YahooOption, YahooOptionChainEntry } from '@/utils/yahoo'
 import { ColorType, createChart, LineSeries, LineStyle, type Time } from 'lightweight-charts'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { VertLine } from '../../chart/VerticalLine'
 import { useCandleData, type CandleData } from '../../context/ChartDataContext'
 import { formatStrike } from './utils'
@@ -33,24 +33,17 @@ export function OptionVolatility({ symbol, chain, spotPrice }: OptionVolatilityP
     const containerRef = useRef<HTMLDivElement>(null)
     const candleData = useCandleData()
 
-    const skewData = useMemo(() => buildSkewData(chain), [chain])
-    const historicalVolatility = useMemo(() => calculateHistoricalVolatility(candleData, 30), [candleData])
+    const skewData = buildSkewData(chain)
+    const historicalVolatility = calculateHistoricalVolatility(candleData, 30)
     const safeSpotPrice = typeof spotPrice === 'number' && Number.isFinite(spotPrice) ? spotPrice : null
 
-    const visibleCalls = useMemo(() => (view === 'put' ? [] : skewData.callPoints), [view, skewData.callPoints])
-    const visiblePuts = useMemo(() => (view === 'call' ? [] : skewData.putPoints), [view, skewData.putPoints])
+    const visibleCalls = (view === 'put' ? [] : skewData.callPoints)
+    const visiblePuts = (view === 'call' ? [] : skewData.putPoints)
     const hasSkewData = skewData.callPoints.length > 0 || skewData.putPoints.length > 0
     const hasVisibleData = visibleCalls.length > 0 || visiblePuts.length > 0
 
-    const atmCall = useMemo(() => {
-        if (safeSpotPrice == null) return null
-        return findNearestPoint(skewData.callPoints, safeSpotPrice)
-    }, [safeSpotPrice, skewData.callPoints])
-
-    const atmPut = useMemo(() => {
-        if (safeSpotPrice == null) return null
-        return findNearestPoint(skewData.putPoints, safeSpotPrice)
-    }, [safeSpotPrice, skewData.putPoints])
+    const atmCall = safeSpotPrice == null ? null : findNearestPoint(skewData.callPoints, safeSpotPrice)
+    const atmPut = safeSpotPrice == null ? null : findNearestPoint(skewData.putPoints, safeSpotPrice)
 
     useEffect(() => {
         if (!containerRef.current || (visibleCalls.length === 0 && visiblePuts.length === 0)) return

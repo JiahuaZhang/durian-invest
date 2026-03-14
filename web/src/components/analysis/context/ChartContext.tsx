@@ -1,5 +1,5 @@
 import { BaselineSeries, CandlestickSeries, createChart, ISeriesApi, LineSeries, LineStyle } from 'lightweight-charts';
-import { createContext, useCallback, useContext, useMemo, useReducer, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useReducer, useRef, type ReactNode } from 'react';
 import {
     defaultFibExtConfig,
     type FibExtConfig
@@ -332,7 +332,7 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
 
     // ── Action creators ──────────────────────────────────────────────────
 
-    const initChart = useCallback((chart: ReturnType<typeof createChart>, candleSeries: ISeriesApi<"Candlestick">) => {
+    function initChart(chart: ReturnType<typeof createChart>, candleSeries: ISeriesApi<"Candlestick">) {
         chartRef.current = chart;
         candleSeriesRef.current = candleSeries;
 
@@ -425,15 +425,15 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
                 dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id: overlay.id, config: overlay.config, data });
             }
         });
-    }, [candleData]);
+    }
 
-    const destroyChart = useCallback(() => {
+    function destroyChart() {
         overlaySeriesRef.current.clear();
         chartRef.current = null;
         candleSeriesRef.current = null;
-    }, []);
+    }
 
-    const addOverlay = useCallback((type: OverlayType): string => {
+    function addOverlay(type: OverlayType): string {
         const chart = chartRef.current;
         const id = generateId(type);
 
@@ -572,9 +572,9 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
         }
 
         return id;
-    }, [candleData]);
+    }
 
-    const removeOverlay = useCallback((id: string) => {
+    function removeOverlay(id: string) {
         const chart = chartRef.current;
         const entry = overlaySeriesRef.current.get(id);
         if (chart && entry) {
@@ -599,9 +599,9 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
         }
 
         dispatch({ type: 'OVERLAY_REMOVED', id });
-    }, []);
+    }
 
-    const updateOverlayConfig = useCallback(<T extends VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig | VWAPConfig>(id: string, configUpdates: Partial<T>) => {
+    function updateOverlayConfig<T extends VolumeConfig | MAConfig | MarketBiasConfig | FibonacciConfig | FibExtConfig | VWAPConfig>(id: string, configUpdates: Partial<T>) {
         const currentState = stateRef.current;
         const overlay = currentState.overlays[id];
         if (!overlay) return;
@@ -741,9 +741,9 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
                 dispatch({ type: 'OVERLAY_CONFIG_UPDATED', id, config: newConfig, data: [] });
             }
         }
-    }, [candleData]);
+    }
 
-    const toggleOverlay = useCallback((id: string) => {
+    function toggleOverlay(id: string) {
         const chart = chartRef.current;
         const currentState = stateRef.current;
         const overlay = currentState.overlays[id];
@@ -823,10 +823,10 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
         }
 
         dispatch({ type: 'OVERLAY_TOGGLED', id, visible: newVisible });
-    }, []);
+    }
 
     // Indicator actions
-    const addIndicator = useCallback((type: IndicatorType): string => {
+    function addIndicator(type: IndicatorType): string {
         const id = generateId(type);
         let config: SubIndicator['config'];
 
@@ -841,38 +841,38 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
 
         dispatch({ type: 'INDICATOR_ADDED', indicator: { id, type, visible: true, config } });
         return id;
-    }, []);
+    }
 
-    const removeIndicator = useCallback((id: string) => {
+    function removeIndicator(id: string) {
         dispatch({ type: 'INDICATOR_REMOVED', id });
-    }, []);
+    }
 
-    const updateIndicator = useCallback((id: string, updates: Partial<SubIndicator>) => {
+    function updateIndicator(id: string, updates: Partial<SubIndicator>) {
         dispatch({ type: 'INDICATOR_UPDATED', id, updates });
-    }, []);
+    }
 
-    const updateIndicatorConfig = useCallback(<T extends MACDConfig | RSIConfig>(id: string, configUpdates: Partial<T>) => {
+    function updateIndicatorConfig<T extends MACDConfig | RSIConfig>(id: string, configUpdates: Partial<T>) {
         const currentState = stateRef.current;
         const indicator = currentState.indicators[id];
         if (!indicator) return;
         const newConfig = { ...indicator.config, ...configUpdates } as T;
         dispatch({ type: 'INDICATOR_CONFIG_UPDATED', id, config: newConfig });
-    }, []);
+    }
 
-    const toggleIndicator = useCallback((id: string) => {
+    function toggleIndicator(id: string) {
         dispatch({ type: 'INDICATOR_TOGGLED', id });
-    }, []);
+    }
 
     // Legend actions
-    const setMainLegend = useCallback((legend: MainLegend | null) => {
+    function setMainLegend(legend: MainLegend | null) {
         dispatch({ type: 'MAIN_LEGEND_SET', legend });
-    }, []);
+    }
 
-    const setOverlayLegend = useCallback((id: string, legend: OverlayLegend | undefined) => {
+    function setOverlayLegend(id: string, legend: OverlayLegend | undefined) {
         dispatch({ type: 'OVERLAY_LEGEND_SET', id, legend });
-    }, []);
+    }
 
-    const actions = useMemo(() => ({
+    const actions = {
         initChart,
         destroyChart,
         addOverlay,
@@ -886,9 +886,7 @@ export function ChartProvider({ children }: { children: ReactNode; }) {
         toggleIndicator,
         setMainLegend,
         setOverlayLegend,
-    }), [initChart, destroyChart, addOverlay, removeOverlay, updateOverlayConfig, toggleOverlay,
-        addIndicator, removeIndicator, updateIndicator, updateIndicatorConfig, toggleIndicator,
-        setMainLegend, setOverlayLegend]);
+    };
 
     return (
         <ChartContext.Provider value={{ state, chartRef, candleSeriesRef, overlaySeriesRef, syncingRef, actions }}>
@@ -931,7 +929,7 @@ export function useIndicators() {
     const { state, actions } = useChartContext();
     const indicators = state.indicators;
 
-    const getIndicator = useCallback((id: string) => indicators[id], [indicators]);
+    const getIndicator = (id: string) => indicators[id];
 
     return {
         indicators,

@@ -1,5 +1,5 @@
 import { createChart, LineSeries, LineStyle } from 'lightweight-charts'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SD, SMA, Stochastic } from 'technicalindicators'
 
 export type RawTFFData = {
@@ -186,7 +186,7 @@ export function processTFFData(data: RawTFFData[]): ProcessedPoint[] {
 
 export function TFFChart({ data }: { data: RawTFFData[] }) {
     const chartContainerRef = useRef<HTMLDivElement>(null)
-    const processedData = useMemo(() => processTFFData(data), [data])
+    const processedData = processTFFData(data)
     const [legend, setLegend] = useState<any>(null)
 
     useEffect(() => {

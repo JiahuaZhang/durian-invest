@@ -1,5 +1,5 @@
 import { ColorType, createChart, HistogramSeries, type Time } from 'lightweight-charts'
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { COLORS } from './constants'
 import type { ChartMode, ChartSeries, MetricView, SlotDescriptor, StrikeMetrics } from './types'
 import { findTickLabel, formatCompactNumber, formatStrike } from './utils'
@@ -13,9 +13,7 @@ type OptionBarChartProps = {
 export function OptionBarChart({ strikes, mode, metricView }: OptionBarChartProps) {
     const containerRef = useRef<HTMLDivElement>(null)
 
-    const chartData = useMemo(() => {
-        return buildChartSeries(strikes, mode, metricView)
-    }, [mode, metricView, strikes])
+    const chartData = buildChartSeries(strikes, mode, metricView)
 
     useEffect(() => {
         if (!containerRef.current || strikes.length === 0) return

@@ -1,9 +1,9 @@
 import { CandlestickSeries, createChart, createSeriesMarkers, HistogramData, LineData, Time } from 'lightweight-charts';
 import { Settings } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import { ChartProvider, useCandleData, useChart, useIndicators, useLegend, useOverlays } from '../context/ChartContext';
 import { AuxiliaryChart } from './AuxiliaryChart';
 import { ChartLegend } from './ChartLegend';
-import { ChartProvider, useCandleData, useChart, useIndicators, useLegend, useOverlays } from '../context/ChartContext';
 import type { MAConfig } from './plugin/moving-average/ma';
 import { buildMACrossMarkers } from './plugin/moving-average/ma';
 
@@ -30,7 +30,7 @@ function CandleAnalysisInner() {
     const { setMainLegend, setOverlayLegend } = useLegend();
 
     // Convert overlays record to array for iteration
-    const overlayList = useMemo(() => Object.values(overlays), [overlays]);
+    const overlayList = Object.values(overlays);
 
     // Create main chart — one-time init, imperative
     useEffect(() => {
@@ -47,7 +47,7 @@ function CandleAnalysisInner() {
             newChart.remove();
             actions.destroyChart();
         };
-    }, [data, actions]);
+    }, [data]);
 
     // Handle crosshair for legend
     const overlaysRef = useRef(overlayList);
@@ -134,13 +134,11 @@ function CandleAnalysisInner() {
     }, [chartRef, candleSeriesRef, overlaySeriesRefValue, setMainLegend, setOverlayLegend]);
 
     // Render cross signal markers on the candlestick series
-    const maOverlaysWithSignals = useMemo(() => {
-        return overlayList.filter(o =>
-            (o.type === 'sma' || o.type === 'ema') && o.visible &&
-            (o.config as MAConfig).showCrossSignals &&
-            o.data?.length > 0
-        );
-    }, [overlayList]);
+    const maOverlaysWithSignals = overlayList.filter(o =>
+        (o.type === 'sma' || o.type === 'ema') && o.visible &&
+        (o.config as MAConfig).showCrossSignals &&
+        o.data?.length > 0
+    )
 
     useEffect(() => {
         const candleSeries = candleSeriesRef.current;

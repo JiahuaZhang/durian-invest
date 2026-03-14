@@ -1,5 +1,5 @@
 import { createChart, LineSeries, LineStyle } from 'lightweight-charts'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SD, SMA, Stochastic } from 'technicalindicators'
 
 export type RawPhysicalData = {
@@ -120,7 +120,7 @@ export function processPhysicalData(data: RawPhysicalData[]): ProcessedPoint[] {
 
 export function PhysicalTFFChart({ data }: { data: RawPhysicalData[] }) {
     const chartContainerRef = useRef<HTMLDivElement>(null)
-    const processedData = useMemo(() => processPhysicalData(data), [data])
+    const processedData = processPhysicalData(data)
     const [legend, setLegend] = useState<any>(null)
 
     useEffect(() => {
