@@ -3,10 +3,11 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import UnoCSS from '@unocss/postcss'
 import viteReact from '@vitejs/plugin-react'
 import { nitro } from 'nitro/vite'
-import { defineConfig } from 'vite'
+import { defineConfig } from 'vite-plus'
 import viteTsConfigPaths from 'vite-tsconfig-paths'
 
 const config = defineConfig({
+  lint: { "options": { "typeAware": true, "typeCheck": true } },
   plugins: [
     devtools(),
     nitro(),
@@ -29,6 +30,9 @@ const config = defineConfig({
         rewrite: (path) => path.replace(/^\/api\/yahoo/, ''),
       },
     },
+  },
+  resolve: {
+    tsconfigPaths: true,
   },
   css: {
     postcss: {

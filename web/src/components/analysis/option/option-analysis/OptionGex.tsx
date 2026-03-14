@@ -392,7 +392,7 @@ function findGammaZones(gexData: GexPoint[]): GammaZone[] {
             const prevStrike = gexData[i - 1].strike
             const currStrike = gexData[i].strike
             const ratio = Math.abs(prev) / (Math.abs(prev) + Math.abs(curr))
-            flips.push(Math.round((prevStrike + ratio * (currStrike - prevStrike)) * 100) / 100)
+            flips.push(prevStrike + ratio * (currStrike - prevStrike))
         }
     }
 
