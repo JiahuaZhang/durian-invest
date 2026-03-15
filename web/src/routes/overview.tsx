@@ -11,24 +11,34 @@ const commonProps: MarketOverviewProps = {
   dateRange: '1M'
 } as const;
 
-
-const indicesTabs = [
+const equitiesTabs = [
   {
-    title: "Indices",
+    title: "Equities",
     symbols: [
-      { s: "FOREXCOM:SPXUSD", d: "S&P 500" },
-      { s: "FOREXCOM:NSXUSD", d: "US 100" },
-      { s: "CAPITALCOM:GOLD", d: "Gold" },
-      { s: "TVC:USOIL", d: "Crude Oil" },
-      { s: "CAPITALCOM:SILVER", d: "Silver" },
-      { s: "CAPITALCOM:COPPER", d: "Copper" },
-      { s: "CAPITALCOM:PLATINUM", d: "Platinum" },
-      { s: "FOREXCOM:DJI", d: "Dow 30" },
-      { s: "INDEX:NKY", d: "Nikkei 225" },
-      { s: "INDEX:DEU40", d: "DAX Index" },
-      { s: "FOREXCOM:UKXGBP", d: "UK 100" }
+      { s: "SP500", d: "S&P 500" },
+      { s: "NASDAQ", d: "US 100" },
+      { s: "RUSSELL", d: "US Small Cap 2000 Index" },
+      { s: "DJI", d: "Dow 30" },
+      { s: "DEU40", d: "Europe DAX" },
+      { s: "NKY", d: "Japan Nikkei 225" },
+      // { s: "FTSE", d: "UK 100" },
     ],
-    originalTitle: "Indices"
+    originalTitle: "Equities"
+  }
+];
+
+const commoditiesTabs = [
+  {
+    title: "Commodities",
+    symbols: [
+      { s: "GOLD", d: "Gold" },
+      { s: "BTCUSD", d: "Bitcoin" },
+      { s: "USOIL", d: "Crude Oil" },
+      { s: "SILVER", d: "Silver" },
+      { s: "COPPER", d: "Copper" },
+      // { s: "PLATINUM", d: "Platinum" },
+    ],
+    originalTitle: "Commodities"
   }
 ];
 
@@ -36,11 +46,11 @@ const bondsTabs = [
   {
     title: "Bonds",
     symbols: [
-      { s: "CBOT:ZB1!", d: "T-Bond" },
-      { s: "CBOT:UB1!", d: "Ultra T-Bond" },
-      { s: "EUREX:FGBL1!", d: "Euro Bund" },
-      { s: "EUREX:FBTP1!", d: "Euro BTP" },
-      { s: "EUREX:FGBM1!", d: "Euro BOBL" }
+      { s: "US10Y", d: "US 10 Year T-Bond" },
+      { s: "US02Y", d: "US 2 Year T-Bond" },
+      // { s: "EUREX:FGBL1!", d: "Euro Bund" },
+      // { s: "EUREX:FBTP1!", d: "Euro BTP" },
+      // { s: "EUREX:FGBM1!", d: "Euro BOBL" },
     ],
     originalTitle: "Bonds"
   }
@@ -50,13 +60,14 @@ const forexTabs = [
   {
     title: "Forex",
     symbols: [
-      { s: "FX:USDCNH", d: "USD to CNH" },
-      { s: "FX:EURUSD", d: "EUR to USD" },
-      { s: "FX:GBPUSD", d: "GBP to USD" },
-      { s: "FX:USDJPY", d: "USD to JPY" },
-      { s: "FX:USDCHF", d: "USD to CHF" },
-      { s: "FX:AUDUSD", d: "AUD to USD" },
-      { s: "FX:USDCAD", d: "USD to CAD" }
+      { s: "DXY", d: "Dollar Index" },
+      { s: "EURUSD", d: "EUR to USD" },
+      { s: "GBPUSD", d: "GBP to USD" },
+      { s: "USDCNH", d: "USD to CNH" },
+      { s: "USDJPY", d: "USD to JPY" },
+      // { s: "USDCHF", d: "USD to CHF" },
+      // { s: "AUDUSD", d: "AUD to USD" },
+      // { s: "USDCAD", d: "USD to CAD" },
     ],
     originalTitle: "Forex"
   }
@@ -64,36 +75,35 @@ const forexTabs = [
 
 function Overview() {
   return (
-    <div un-p="4" un-flex="~ col" un-gap="4">
-      <h1 un-text="4xl transparent" un-font="bold" un-bg-gradient="to-r" un-from="purple-600" un-to="pink-600" un-bg="clip-text">
-        Market Overview
-      </h1>
-      <div un-flex="~ col" un-gap="2">
-        <div un-grid="~ cols-1 md:cols-3 xl:cols-4" un-gap="4">
-          <div un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
-            <MarketOverview {...commonProps} tabs={indicesTabs} />
-          </div>
-          <div un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
-            <StockMarket {...commonProps} />
-          </div>
-          <div un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
-            <MarketOverview {...commonProps} tabs={forexTabs} />
-          </div>
-          <div un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
-            <MarketOverview {...commonProps} tabs={bondsTabs} />
-          </div>
-        </div>
+    <div un-p="2" un-flex="~ wrap justify-center" un-gap="2">
+      <div un-flex="1" un-min-w="xs" un-max-w='sm' un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
+        <MarketOverview {...commonProps} tabs={equitiesTabs} />
       </div>
 
-      <div un-flex="~" un-gap="4">
-        <div un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
-          <MiniChart {...commonProps} symbol="CAPITALCOM:VIX" />
-        </div>
-        <div un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white" un-flex="1" >
-          <StockHeatmap {...commonProps} exchanges={["NYSE", "NASDAQ"]} />
-        </div>
+      <div un-flex="1" un-min-w="xs" un-max-w='sm' un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
+        <MarketOverview {...commonProps} tabs={commoditiesTabs} />
       </div>
+
+      <div un-flex="1" un-min-w="xs" un-max-w='sm' un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
+        <MiniChart {...commonProps} symbol="CAPITALCOM:VIX" />
+      </div>
+
+      <div un-flex="1" un-min-w="xs" un-max-w='sm' un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
+        <StockMarket {...commonProps} />
+      </div>
+
+      <div un-flex="1" un-min-w="xs" un-max-w='sm' un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
+        <MarketOverview {...commonProps} tabs={bondsTabs} />
+      </div>
+
+      <div un-flex="1" un-min-w="xs" un-max-w='sm' un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
+        <MarketOverview {...commonProps} tabs={forexTabs} />
+      </div>
+
+      <div un-flex="1" un-min-w="sm" un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white" >
+        <StockHeatmap {...commonProps} exchanges={["NYSE", "NASDAQ"]} />
+      </div>
+
     </div>
   )
 }
-
