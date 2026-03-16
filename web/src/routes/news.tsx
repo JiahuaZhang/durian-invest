@@ -248,9 +248,9 @@ function NewsPage() {
 
       {!loading && !error && (
         <>
-          <div un-grid="~ cols-1 lg:cols-2 xl:cols-3" un-gap="4">
+          <div un-mt='2' un-grid="~ cols-1 lg:cols-2 xl:cols-3 gap-2">
             {newsData?.feed?.map((item, idx) => (
-              <NewsCard key={`${item.url}-${idx}`} item={item} onTickerClick={toggleTicker} />
+              <NewsCard key={`${item.url}-${idx}`} item={item} onTopicClick={toggleTopic} onTickerClick={toggleTicker} />
             ))}
           </div>
 
@@ -279,72 +279,66 @@ function NewsPage() {
   );
 }
 
-function NewsCard({ item, onTickerClick }: { item: NewsItem; onTickerClick: (ticker: string) => void }) {
+function NewsCard({ item, onTopicClick, onTickerClick }: { item: NewsItem; onTopicClick: (topic: string) => void; onTickerClick: (ticker: string) => void }) {
   const sentimentInfo = getSentimentInfo(item.overall_sentiment_score);
   const topTickers = getTopRelevantTickers(item.ticker_sentiment);
 
   return (
-    <div
-      un-border="~ slate-200"
-      un-rounded="2xl"
+    <div un-p='2'
+      un-border="~ slate-200 rounded-xl"
       un-overflow="hidden"
       un-shadow="sm"
       un-hover="shadow-lg border-blue-300"
       un-transition="all"
     >
-      <div un-flex="~ col" un-h="full">
-        {item.banner_image && (
-          <a href={item.url} target="_blank" rel="noopener noreferrer">
-            <div un-h="40" un-overflow="hidden" un-bg="slate-100" un-cursor="pointer">
-              <img
-                src={item.banner_image}
-                alt={item.title}
-                un-w="full"
-                un-h="full"
-                un-object="cover"
-                loading="lazy"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            </div>
-          </a>
-        )}
+      <header un-text="hover:blue-600" un-font="semibold" un-cursor="pointer">
+        <a href={item.url} target="_blank" rel="noopener noreferrer">
+          {item.title}
+        </a>
+      </header>
 
-        <div un-p="4" un-flex="~ col 1" un-gap="3">
-          <div un-flex="~ items-center justify-between">
+      <p un-text="sm slate-600">
+        {item.summary}
+      </p>
+
+      <div un-flex="~">
+        <div un-p="2" un-flex="~ col gap-1">
+          <div un-flex="~ justify-between gap-4">
             <span un-text="xs slate-500" un-font="medium">
               {item.source}
             </span>
             <span un-text="xs slate-400">
               {formatPublishedTime(item.time_published)}
             </span>
-          </div>
-
-          <a href={item.url} target="_blank" rel="noopener noreferrer">
-            <h3 un-text="slate-800 hover:blue-600" un-font="semibold" un-leading="snug" un-cursor="pointer">
-              {item.title}
-            </h3>
-          </a>
-
-          <p un-text="sm slate-500" un-line-clamp="2">
-            {item.summary}
-          </p>
-
-          <div un-flex="~ wrap items-center gap-2" un-mt="auto">
             <span
-              un-p="x-2 y-1"
               un-rounded="lg"
               un-text={`xs ${sentimentInfo.color}`}
               un-bg={sentimentInfo.bgColor}
             >
               {sentimentInfo.emoji} {sentimentInfo.label} ({item.overall_sentiment_score.toFixed(2)})
             </span>
+          </div>
 
+          <div un-flex='~ wrap gap-1'>
+            {item.topics.map(({ topic }) => <span
+              key={topic}
+              un-p="x-2 y-1"
+              un-rounded="lg"
+              un-text="xs"
+              un-bg="slate-100 hover:slate-200"
+              un-border="~ slate-200"
+              un-cursor="pointer"
+              un-transition="all"
+              onClick={() => onTopicClick(topic)}
+            >
+              {topic}
+            </span>
+            )}
+          </div>
+
+          <div un-flex="~ wrap items-center gap-2">
             {topTickers.map((ticker) => {
-              const tickerSentiment = getSentimentInfo(
-                parseFloat(ticker.ticker_sentiment_score)
-              );
+              const tickerSentiment = getSentimentInfo(parseFloat(ticker.ticker_sentiment_score));
               return (
                 <button
                   key={ticker.ticker}
@@ -366,6 +360,24 @@ function NewsCard({ item, onTickerClick }: { item: NewsItem; onTickerClick: (tic
             })}
           </div>
         </div>
+
+        {item.banner_image && (
+          <a un-flex='1' href={item.url} target="_blank" rel="noopener noreferrer">
+            <div un-h="40" un-overflow="hidden" un-bg="slate-100" un-cursor="pointer">
+              <img
+                src={item.banner_image}
+                alt={item.title}
+                un-w="full"
+                un-h="full"
+                un-object="cover"
+                loading="lazy"
+                onError={(e) => {
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            </div>
+          </a>
+        )}
       </div>
     </div>
   );
