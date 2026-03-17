@@ -2,28 +2,23 @@ import { createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/')({ component: App })
 
+const links = [
+  { link: 'https://tradingview.com/', name: 'TradingView' },
+  { link: 'https://optioncharts.io/', name: 'OptionCharts' },
+  { link: 'https://www.google.com/finance', name: 'Google Finance' },
+]
+
 function App() {
   return (
     <div un-p="8">
-      <h1 un-text="4xl transparent" un-font-bold="~" un-bg-gradient-to-r="~" un-from-cyan-600="~" un-to-blue-600="~" un-bg-clip-text="~" un-mb="6">
-        Welcome Back
-      </h1>
-
-      <div un-grid="~ cols-1 md:cols-2 lg:cols-3" un-gap="6">
-        <div un-p="6" un-rounded-2xl="~" un-bg="white" un-border="~" un-border-slate="200" un-shadow-sm="~" un-hover="border-blue-500/30 shadow-md" un-transition-all="~">
-          <h3 un-text-xl="~" un-font-semibold="~" un-mb="2" un-text-slate="800">Market Overview</h3>
-          <p un-text-slate="500">Loading market interactions...</p>
-        </div>
-
-        <div un-p="6" un-rounded-2xl="~" un-bg="white" un-border="~" un-border-slate="200" un-shadow-sm="~" un-hover="border-purple-500/30 shadow-md" un-transition-all="~">
-          <h3 un-text-xl="~" un-font-semibold="~" un-mb="2" un-text-slate="800">Recent Trades</h3>
-          <p un-text-slate="500">No recent activity found.</p>
-        </div>
-
-        <div un-p="6" un-rounded-2xl="~" un-bg="white" un-border="~" un-border-slate="200" un-shadow-sm="~" un-hover="border-blue-500/30 shadow-md" un-transition-all="~">
-          <h3 un-text-xl="~" un-font-semibold="~" un-mb="2" un-text-slate="800">Portfolio Value</h3>
-          <p un-text-slate="500">$0.00</p>
-        </div>
+      <div un-flex='~ col gap-2'>
+        {
+          links.map((link) => (
+            <a un-text="blue-500" key={link.link} href={link.link} target="_blank" rel="noopener noreferrer">
+              {link.name}
+            </a>
+          ))
+        }
       </div>
     </div>
   )
