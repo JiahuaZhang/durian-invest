@@ -302,8 +302,8 @@ function NewsCard({ item, onTopicClick, onTickerClick }: { item: NewsItem; onTop
       </p>
 
       <div un-flex="~">
-        <div un-p="2" un-flex="~ col gap-1">
-          <div un-flex="~ justify-between gap-4">
+        <div un-p="2" un-flex="~ col gap-2 1">
+          <div un-flex="~ justify-between sm:wrap sm:gap-2">
             <span un-text="xs slate-500" un-font="medium">
               {item.source}
             </span>
