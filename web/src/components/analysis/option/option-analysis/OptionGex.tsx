@@ -153,6 +153,8 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
 
         // Background zones for long/short gamma areas
         for (const { start, end, isLong } of gammaZones) {
+            if (start === end) continue;
+
             const zoneSeries = chart.addSeries(LineSeries, {
                 visible: false,
                 autoscaleInfoProvider: () => null,

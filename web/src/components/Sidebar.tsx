@@ -1,7 +1,6 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import {
     BarChart3,
-    CalendarDays,
     ChevronLeft,
     History,
     Home,
@@ -10,8 +9,7 @@ import {
     Menu,
     Newspaper,
     PieChart,
-    PiggyBank,
-    TrendingUp
+    PiggyBank
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -24,11 +22,8 @@ export function Sidebar() {
         { icon: LayoutGrid, label: 'Overview', to: '/overview' },
         { icon: LineChart, label: 'Analysis', to: '/analysis' },
         { icon: Newspaper, label: 'News', to: '/news' },
-        { icon: CalendarDays, label: 'Calendar', to: '/economic-calendar' },
-        { icon: TrendingUp, label: 'Futures', to: '/futures' },
         { icon: BarChart3, label: 'Depth (DOM)', to: '/dom/btc' },
         { icon: PieChart, label: 'COT Report', to: '/cot' },
-        { icon: TrendingUp, label: 'Gamma Exposure', to: '/gex' },
         { icon: History, label: 'History', to: '/history' },
     ]
 

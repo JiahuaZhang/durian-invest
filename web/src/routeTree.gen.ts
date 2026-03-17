@@ -9,30 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SpxRouteImport } from './routes/spx'
 import { Route as OverviewRouteImport } from './routes/overview'
 import { Route as NewsRouteImport } from './routes/news'
 import { Route as HistoryRouteImport } from './routes/history'
-import { Route as GexRouteImport } from './routes/gex'
-import { Route as FuturesRouteImport } from './routes/futures'
-import { Route as EconomicCalendarRouteImport } from './routes/economic-calendar'
 import { Route as CotRouteImport } from './routes/cot'
 import { Route as AnalysisRouteImport } from './routes/analysis'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as FuturesIndexRouteImport } from './routes/futures.index'
-import { Route as GexSymbolRouteImport } from './routes/gex.$symbol'
-import { Route as FuturesMaRouteImport } from './routes/futures.ma'
 import { Route as DomBtcRouteImport } from './routes/dom.btc'
 import { Route as CotSpxRouteImport } from './routes/cot.spx'
 import { Route as CotSilverRouteImport } from './routes/cot.silver'
 import { Route as CotNdxRouteImport } from './routes/cot.ndx'
 import { Route as CotGoldRouteImport } from './routes/cot.gold'
 
-const SpxRoute = SpxRouteImport.update({
-  id: '/spx',
-  path: '/spx',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const OverviewRoute = OverviewRouteImport.update({
   id: '/overview',
   path: '/overview',
@@ -46,21 +34,6 @@ const NewsRoute = NewsRouteImport.update({
 const HistoryRoute = HistoryRouteImport.update({
   id: '/history',
   path: '/history',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GexRoute = GexRouteImport.update({
-  id: '/gex',
-  path: '/gex',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FuturesRoute = FuturesRouteImport.update({
-  id: '/futures',
-  path: '/futures',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EconomicCalendarRoute = EconomicCalendarRouteImport.update({
-  id: '/economic-calendar',
-  path: '/economic-calendar',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CotRoute = CotRouteImport.update({
@@ -77,21 +50,6 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
-} as any)
-const FuturesIndexRoute = FuturesIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => FuturesRoute,
-} as any)
-const GexSymbolRoute = GexSymbolRouteImport.update({
-  id: '/$symbol',
-  path: '/$symbol',
-  getParentRoute: () => GexRoute,
-} as any)
-const FuturesMaRoute = FuturesMaRouteImport.update({
-  id: '/ma',
-  path: '/ma',
-  getParentRoute: () => FuturesRoute,
 } as any)
 const DomBtcRoute = DomBtcRouteImport.update({
   id: '/dom/btc',
@@ -123,61 +81,41 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analysis': typeof AnalysisRoute
   '/cot': typeof CotRouteWithChildren
-  '/economic-calendar': typeof EconomicCalendarRoute
-  '/futures': typeof FuturesRouteWithChildren
-  '/gex': typeof GexRouteWithChildren
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
-  '/spx': typeof SpxRoute
   '/cot/gold': typeof CotGoldRoute
   '/cot/ndx': typeof CotNdxRoute
   '/cot/silver': typeof CotSilverRoute
   '/cot/spx': typeof CotSpxRoute
   '/dom/btc': typeof DomBtcRoute
-  '/futures/ma': typeof FuturesMaRoute
-  '/gex/$symbol': typeof GexSymbolRoute
-  '/futures/': typeof FuturesIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analysis': typeof AnalysisRoute
   '/cot': typeof CotRouteWithChildren
-  '/economic-calendar': typeof EconomicCalendarRoute
-  '/gex': typeof GexRouteWithChildren
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
-  '/spx': typeof SpxRoute
   '/cot/gold': typeof CotGoldRoute
   '/cot/ndx': typeof CotNdxRoute
   '/cot/silver': typeof CotSilverRoute
   '/cot/spx': typeof CotSpxRoute
   '/dom/btc': typeof DomBtcRoute
-  '/futures/ma': typeof FuturesMaRoute
-  '/gex/$symbol': typeof GexSymbolRoute
-  '/futures': typeof FuturesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/analysis': typeof AnalysisRoute
   '/cot': typeof CotRouteWithChildren
-  '/economic-calendar': typeof EconomicCalendarRoute
-  '/futures': typeof FuturesRouteWithChildren
-  '/gex': typeof GexRouteWithChildren
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
-  '/spx': typeof SpxRoute
   '/cot/gold': typeof CotGoldRoute
   '/cot/ndx': typeof CotNdxRoute
   '/cot/silver': typeof CotSilverRoute
   '/cot/spx': typeof CotSpxRoute
   '/dom/btc': typeof DomBtcRoute
-  '/futures/ma': typeof FuturesMaRoute
-  '/gex/$symbol': typeof GexSymbolRoute
-  '/futures/': typeof FuturesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -185,85 +123,54 @@ export interface FileRouteTypes {
     | '/'
     | '/analysis'
     | '/cot'
-    | '/economic-calendar'
-    | '/futures'
-    | '/gex'
     | '/history'
     | '/news'
     | '/overview'
-    | '/spx'
     | '/cot/gold'
     | '/cot/ndx'
     | '/cot/silver'
     | '/cot/spx'
     | '/dom/btc'
-    | '/futures/ma'
-    | '/gex/$symbol'
-    | '/futures/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/analysis'
     | '/cot'
-    | '/economic-calendar'
-    | '/gex'
     | '/history'
     | '/news'
     | '/overview'
-    | '/spx'
     | '/cot/gold'
     | '/cot/ndx'
     | '/cot/silver'
     | '/cot/spx'
     | '/dom/btc'
-    | '/futures/ma'
-    | '/gex/$symbol'
-    | '/futures'
   id:
     | '__root__'
     | '/'
     | '/analysis'
     | '/cot'
-    | '/economic-calendar'
-    | '/futures'
-    | '/gex'
     | '/history'
     | '/news'
     | '/overview'
-    | '/spx'
     | '/cot/gold'
     | '/cot/ndx'
     | '/cot/silver'
     | '/cot/spx'
     | '/dom/btc'
-    | '/futures/ma'
-    | '/gex/$symbol'
-    | '/futures/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalysisRoute: typeof AnalysisRoute
   CotRoute: typeof CotRouteWithChildren
-  EconomicCalendarRoute: typeof EconomicCalendarRoute
-  FuturesRoute: typeof FuturesRouteWithChildren
-  GexRoute: typeof GexRouteWithChildren
   HistoryRoute: typeof HistoryRoute
   NewsRoute: typeof NewsRoute
   OverviewRoute: typeof OverviewRoute
-  SpxRoute: typeof SpxRoute
   DomBtcRoute: typeof DomBtcRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/spx': {
-      id: '/spx'
-      path: '/spx'
-      fullPath: '/spx'
-      preLoaderRoute: typeof SpxRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/overview': {
       id: '/overview'
       path: '/overview'
@@ -283,27 +190,6 @@ declare module '@tanstack/react-router' {
       path: '/history'
       fullPath: '/history'
       preLoaderRoute: typeof HistoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/gex': {
-      id: '/gex'
-      path: '/gex'
-      fullPath: '/gex'
-      preLoaderRoute: typeof GexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/futures': {
-      id: '/futures'
-      path: '/futures'
-      fullPath: '/futures'
-      preLoaderRoute: typeof FuturesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/economic-calendar': {
-      id: '/economic-calendar'
-      path: '/economic-calendar'
-      fullPath: '/economic-calendar'
-      preLoaderRoute: typeof EconomicCalendarRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cot': {
@@ -326,27 +212,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
-    }
-    '/futures/': {
-      id: '/futures/'
-      path: '/'
-      fullPath: '/futures/'
-      preLoaderRoute: typeof FuturesIndexRouteImport
-      parentRoute: typeof FuturesRoute
-    }
-    '/gex/$symbol': {
-      id: '/gex/$symbol'
-      path: '/$symbol'
-      fullPath: '/gex/$symbol'
-      preLoaderRoute: typeof GexSymbolRouteImport
-      parentRoute: typeof GexRoute
-    }
-    '/futures/ma': {
-      id: '/futures/ma'
-      path: '/ma'
-      fullPath: '/futures/ma'
-      preLoaderRoute: typeof FuturesMaRouteImport
-      parentRoute: typeof FuturesRoute
     }
     '/dom/btc': {
       id: '/dom/btc'
@@ -402,40 +267,13 @@ const CotRouteChildren: CotRouteChildren = {
 
 const CotRouteWithChildren = CotRoute._addFileChildren(CotRouteChildren)
 
-interface FuturesRouteChildren {
-  FuturesMaRoute: typeof FuturesMaRoute
-  FuturesIndexRoute: typeof FuturesIndexRoute
-}
-
-const FuturesRouteChildren: FuturesRouteChildren = {
-  FuturesMaRoute: FuturesMaRoute,
-  FuturesIndexRoute: FuturesIndexRoute,
-}
-
-const FuturesRouteWithChildren =
-  FuturesRoute._addFileChildren(FuturesRouteChildren)
-
-interface GexRouteChildren {
-  GexSymbolRoute: typeof GexSymbolRoute
-}
-
-const GexRouteChildren: GexRouteChildren = {
-  GexSymbolRoute: GexSymbolRoute,
-}
-
-const GexRouteWithChildren = GexRoute._addFileChildren(GexRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalysisRoute: AnalysisRoute,
   CotRoute: CotRouteWithChildren,
-  EconomicCalendarRoute: EconomicCalendarRoute,
-  FuturesRoute: FuturesRouteWithChildren,
-  GexRoute: GexRouteWithChildren,
   HistoryRoute: HistoryRoute,
   NewsRoute: NewsRoute,
   OverviewRoute: OverviewRoute,
-  SpxRoute: SpxRoute,
   DomBtcRoute: DomBtcRoute,
 }
 export const routeTree = rootRouteImport

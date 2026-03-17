@@ -54,24 +54,6 @@ type YahooResponse = {
     }
 }
 
-export type GexStrikeData = {
-    strike: number
-    callGex: number
-    putGex: number
-    totalGex: number
-    callOi: number
-    putOi: number
-}
-
-export type GexProfile = {
-    symbol: string
-    price: number
-    totalNetGex: number
-    zeroGexStrike: number
-    strikes: GexStrikeData[]
-    expirationDate: string
-}
-
 let cachedCrumb: string | null = null
 let cachedCookie: string | null = null
 
@@ -181,88 +163,4 @@ export const getOptionOpenInterestData = createServerFn({ method: 'GET' })
     .inputValidator((data: { symbol: string; date?: number }) => data)
     .handler(async ({ data }) => {
         return await fetchYahooOptionChain(data.symbol, data.date)
-    })
-
-
-/**
- * Estimates Gamma for an option given its properties.
- * Using a simplified Black-Scholes approximation.
- */
-function calculateGamma(
-    S: number, // Spot Price
-    K: number, // Strike Price
-    T: number, // Time to expiration in years
-    sigma: number, // Implied Volatility
-    r: number = 0.05 // Risk free rate (approx)
-): number {
-    if (T <= 0 || sigma === 0 || S === 0) return 0
-
-    const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T))
-    const nd1 = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1)
-
-    return nd1 / (S * sigma * Math.sqrt(T))
-}
-
-export const getGexData = createServerFn({ method: "GET" })
-    .inputValidator((symbol: string) => symbol)
-    .handler(async ({ data: symbol }) => {
-        const result = await fetchYahooOptionChain(symbol)
-        if (!result.options || result.options.length === 0) {
-            throw new Error(`No options chain available for ${symbol.toUpperCase()}. Try SPY or QQQ instead.`)
-        }
-
-        const currentPrice = result.quote.regularMarketPrice
-        const now = Date.now() / 1000
-
-        const strikeMap = new Map<number, GexStrikeData>()
-
-        const processOption = (opt: YahooOption, isCall: boolean) => {
-            if (!opt.openInterest) return
-
-            const T = (opt.expiration - now) / (365 * 24 * 3600)
-            const iv = opt.impliedVolatility || 0
-
-            const gamma = calculateGamma(currentPrice, opt.strike, T, iv)
-            const gexVal = gamma * opt.openInterest * 100 * currentPrice
-
-            const existing = strikeMap.get(opt.strike) || {
-                strike: opt.strike,
-                callGex: 0,
-                putGex: 0,
-                totalGex: 0,
-                callOi: 0,
-                putOi: 0
-            }
-
-            if (isCall) {
-                existing.callGex += gexVal
-                existing.callOi += opt.openInterest
-            } else {
-                existing.putGex += gexVal
-                existing.putOi += opt.openInterest
-            }
-
-            strikeMap.set(opt.strike, existing)
-        }
-
-        result.options.forEach(chain => {
-            chain.calls.forEach(o => processOption(o, true))
-            chain.puts.forEach(o => processOption(o, false))
-        })
-
-        const strikes = Array.from(strikeMap.values()).map(s => ({
-            ...s,
-            totalGex: s.callGex - s.putGex
-        })).sort((a, b) => a.strike - b.strike)
-
-        const totalNetGex = strikes.reduce((sum, s) => sum + s.totalGex, 0)
-
-        return {
-            symbol: result.underlyingSymbol,
-            price: currentPrice,
-            totalNetGex,
-            zeroGexStrike: 0,
-            strikes,
-            expirationDate: new Date(result.options[0].expirationDate * 1000).toLocaleDateString()
-        }
     })
