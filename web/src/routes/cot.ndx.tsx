@@ -18,23 +18,39 @@ function CotPage() {
     const { financialData } = Route.useLoaderData()
 
     return (
-        <div un-p="4" un-flex="~ col" un-gap="6" un-h="full" un-overflow-y="auto">
-            <div un-flex="~ col" un-gap="6">
-                <TFFChart data={financialData} />
-            </div>
+        <div un-p="2" un-flex="~ col" un-gap="2" un-h="full">
+            <TFFChart data={financialData} />
 
-            <div un-bg="blue-50" un-p="4" un-rounded="xl" un-flex="~ gap-3" un-text="blue-800 text-sm">
-                <Info className="shrink-0" size={20} />
-                <div>
+            <div un-bg="blue-50" un-p="4" un-rounded="xl" un-text="blue-800 text-sm">
+                <header un-flex='~ gap-2 items-center'>
+                    <Info size={20} />
                     <strong>Interpretation Guide:</strong>
-                    <ul un-list="disc inside" un-mt="1" un-space-y="1">
-                        <li><strong>Asset Managers (Blue):</strong> Institutional investors (pension funds, endowments). Often trend-following but slow moving. Can be considered "Smart Money" in long horizons.</li>
-                        <li><strong>Leveraged Funds (Green):</strong> Hedge funds and CTAs. Highly speculative and trend-following. Pay attention when they reach extremes or diverge from price.</li>
-                        <li><strong>Dealers (Red):</strong> The "Smart Money" intermediaries. They take the other side of trade. If Dealers are Net Long in a downtrend, it can signal accumulation.</li>
-                    </ul>
-                </div>
+                </header>
+                <ul un-list="disc inside" un-mt="1" un-space-y="1">
+                    <li><strong>Asset Managers (Blue):</strong> Asset Managers / Institutional (asset_mgr): These are pension funds, mutual funds, endowments, and insurance companies. They are the "Real Money."
+                        <p>
+                            Behavior: They are structurally long-biased (they have to hold equities). They move slowly and reallocate over months or quarters.
+                        </p>
+                    </li>
+                    <li><strong>Leveraged Funds (Green):</strong> Leveraged Money (lev_money): These are hedge funds, Commodity Trading Advisors (CTAs), and proprietary trading desks. They are the "Fast Money" or "Smart Money."
+                        <p>
+                            Behavior: They use leverage, move quickly, and are heavily trend-following. They go both long and short aggressively.
+                        </p>
+                    </li>
+                    <li><strong>Dealers (Red):</strong> Dealer / Intermediary (dealer): These are the big Wall Street banks (sell-side).
+                        <p>
+                            Behavior: They don't usually take speculative bets. They facilitate trades for clients and delta-hedge their options/OTC books. Traders usually ignore them for directional bias, as their positions are just hedges.
+                        </p>
+                    </li>
+                    <li>
+                        <strong>Other Reportables (Gray): </strong>
+                        These are retail traders and small speculators who don't meet the size threshold to be reported individually.
+                        <p>
+                            Behavior: "Dumb Money." Often used as a contrarian indicator.
+                        </p>
+                    </li>
+                </ul>
             </div>
-
         </div>
     )
 }

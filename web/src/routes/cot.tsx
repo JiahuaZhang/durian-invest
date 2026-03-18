@@ -2,26 +2,14 @@ import { createFileRoute, Link, Outlet } from '@tanstack/react-router'
 import { LayoutDashboard } from 'lucide-react'
 
 export const Route = createFileRoute('/cot')({
-  component: CotLayout,
+  component: CotLayout
 })
 
 const links = [
-  {
-    to: '/cot/spx',
-    label: 'S&P 500',
-  },
-  {
-    to: '/cot/ndx',
-    label: 'Nasdaq (NDX)',
-  },
-  {
-    to: '/cot/gold',
-    label: 'Gold',
-  },
-  {
-    to: '/cot/silver',
-    label: 'Silver',
-  },
+  { to: '/cot/spx', label: 'S&P 500', },
+  { to: '/cot/ndx', label: 'Nasdaq (NDX)', },
+  { to: '/cot/gold', label: 'Gold', },
+  { to: '/cot/silver', label: 'Silver', },
 ]
 
 function CotLayout() {

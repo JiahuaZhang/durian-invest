@@ -3,8 +3,8 @@ import { createFileRoute } from '@tanstack/react-router'
 export const Route = createFileRoute('/')({ component: App })
 
 const links = [
-  { link: 'https://tradingview.com/', name: 'TradingView' },
-  { link: 'https://optioncharts.io/', name: 'OptionCharts' },
+  { link: 'https://tradingview.com/', name: 'Trading View' },
+  { link: 'https://optioncharts.io/', name: 'Option Charts' },
   { link: 'https://www.google.com/finance', name: 'Google Finance' },
 ]
 

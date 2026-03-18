@@ -22,8 +22,8 @@ export function Sidebar() {
         { icon: LayoutGrid, label: 'Overview', to: '/overview' },
         { icon: LineChart, label: 'Analysis', to: '/analysis' },
         { icon: Newspaper, label: 'News', to: '/news' },
+        { icon: PieChart, label: 'COT Report', to: '/cot/spx' },
         { icon: BarChart3, label: 'Depth (DOM)', to: '/dom/btc' },
-        { icon: PieChart, label: 'COT Report', to: '/cot' },
         { icon: History, label: 'History', to: '/history' },
     ]
 
