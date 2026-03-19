@@ -150,7 +150,18 @@ export function TFFChart({ data }: { data: RawTFFData[] }) {
         })
 
         chart.subscribeCrosshairMove((param) => {
-            if (param.time && param.point) {
+            const container = chartContainerRef.current
+            if (
+                param.point === undefined ||
+                !param.time ||
+                !container ||
+                param.point.x < 0 ||
+                param.point.x > container.clientWidth ||
+                param.point.y < 0 ||
+                param.point.y > container.clientHeight
+            ) {
+                setLegend(null)
+            } else {
                 const legendData: any = { date: param.time }
                 param.seriesData.forEach((value, series) => {
                     const label = seriesMap.get(series)
@@ -159,8 +170,6 @@ export function TFFChart({ data }: { data: RawTFFData[] }) {
                     }
                 })
                 setLegend(legendData)
-            } else {
-                setLegend(null)
             }
         })
 
