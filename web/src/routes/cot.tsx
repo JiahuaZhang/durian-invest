@@ -28,7 +28,7 @@ export const Route = createFileRoute('/cot')({
     loader: async ({ deps: { type, product } }) => {
         const config = getProduct(product, type)
         if (!config) throw new Error(`Unknown product: ${product}`)
-        const url = `${CFTC_ENDPOINTS[type]}?cftc_contract_market_code=${encodeURIComponent(config.contractCode)}&$order=report_date_as_yyyy_mm_dd ASC`
+        const url = `${CFTC_ENDPOINTS[type]}?cftc_contract_market_code=${encodeURIComponent(config.contractCode)}&$order=report_date_as_yyyy_mm_dd ASC&$limit=520`
         const res = await fetch(url)
         if (!res.ok) throw new Error(`Failed to fetch COT data for ${config.label}`)
         return { data: await res.json() }
