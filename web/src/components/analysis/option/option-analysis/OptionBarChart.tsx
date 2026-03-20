@@ -1,4 +1,4 @@
-import { ColorType, createChart, HistogramSeries, type Time } from 'lightweight-charts'
+import { createChart, HistogramSeries, type Time } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
 import { COLORS } from './constants'
 import type { ChartMode, ChartSeries, MetricView, SlotDescriptor, StrikeMetrics } from './types'
@@ -19,12 +19,6 @@ export function OptionBarChart({ strikes, mode, metricView }: OptionBarChartProp
         if (!containerRef.current || strikes.length === 0) return
 
         const chart = createChart(containerRef.current, {
-            height: 360,
-            layout: {
-                background: { type: ColorType.Solid, color: '#ffffff' },
-                textColor: '#64748b',
-                fontSize: 12,
-            },
             grid: {
                 vertLines: { color: '#f1f5f9' },
                 horzLines: { color: '#f1f5f9' },
@@ -32,12 +26,8 @@ export function OptionBarChart({ strikes, mode, metricView }: OptionBarChartProp
             rightPriceScale: {
                 borderVisible: false,
             },
-            leftPriceScale: {
-                visible: false,
-            },
             timeScale: {
                 borderVisible: false,
-                minBarSpacing: 0.2,
                 tickMarkFormatter: (time: Time) => {
                     const numberTime = Number(time)
                     const mapped = findTickLabel(chartData.tickLabels, numberTime)
@@ -81,6 +71,16 @@ export function OptionBarChart({ strikes, mode, metricView }: OptionBarChartProp
     return <div ref={containerRef} un-w="full" un-h="88" />
 }
 
+const createSlot = (type: 'call' | 'put', side: 'up' | 'down', field: 'oi' | 'vol', group = 0): SlotDescriptor => {
+    const sign = side === 'up' ? 1 : -1
+    return {
+        id: `${type}-${side}-${field}`,
+        getValue: strike => sign * (type === 'call' ? (field === 'oi' ? strike.callOpenInterest : strike.callVolume) : (field === 'oi' ? strike.putOpenInterest : strike.putVolume)),
+        color: type === 'call' ? (field === 'oi' ? COLORS.callOpenInterest : COLORS.callVolume) : (field === 'oi' ? COLORS.putOpenInterest : COLORS.putVolume),
+        group,
+    }
+}
+
 function buildChartSeries(
     strikes: StrikeMetrics[],
     mode: ChartMode,
@@ -90,33 +90,44 @@ function buildChartSeries(
     const includeVolume = metricView === 'volume' || metricView === 'both'
 
     const slots: SlotDescriptor[] = []
-    const pushSideSlots = (side: 'call' | 'put', sign: 1 | -1) => {
-        if (includeOpenInterest) {
-            slots.push({
-                id: `${side}-oi`,
-                getValue: strike => sign * (side === 'call' ? strike.callOpenInterest : strike.putOpenInterest),
-                color: side === 'call' ? COLORS.callOpenInterest : COLORS.putOpenInterest,
-            })
-        }
-        if (includeVolume) {
-            slots.push({
-                id: `${side}-vol`,
-                getValue: strike => sign * (side === 'call' ? strike.callVolume : strike.putVolume),
-                color: side === 'call' ? COLORS.callVolume : COLORS.putVolume,
-            })
-        }
-    }
 
     if (mode === 'call') {
-        pushSideSlots('call', 1)
+        if (includeOpenInterest && includeVolume) {
+            slots.push(createSlot('call', 'up', 'oi', 0))
+            slots.push(createSlot('call', 'down', 'vol', 0))
+        } else if (includeOpenInterest) {
+            slots.push(createSlot('call', 'up', 'oi'))
+        } else if (includeVolume) {
+            slots.push(createSlot('call', 'up', 'vol'))
+        }
     } else if (mode === 'put') {
-        pushSideSlots('put', 1)
+        if (includeOpenInterest && includeVolume) {
+            slots.push(createSlot('put', 'up', 'oi', 0))
+            slots.push(createSlot('put', 'down', 'vol', 0))
+        } else if (includeOpenInterest) {
+            slots.push(createSlot('put', 'up', 'oi'))
+        } else if (includeVolume) {
+            slots.push(createSlot('put', 'up', 'vol'))
+        }
     } else if (mode === 'overlay') {
-        pushSideSlots('put', 1)
-        pushSideSlots('call', 1)
+        if (includeOpenInterest) {
+            slots.push(createSlot('put', 'up', 'oi'))
+            slots.push(createSlot('call', 'up', 'oi', 1))
+        }
+        if (includeVolume) {
+            slots.push(createSlot('put', 'up', 'vol', 2))
+            slots.push(createSlot('call', 'up', 'vol', 3))
+        }
     } else if (mode === 'split') {
-        pushSideSlots('put', -1)
-        pushSideSlots('call', 1)
+        if (includeOpenInterest) {
+            slots.push(createSlot('put', 'down', 'oi'))
+            slots.push(createSlot('call', 'up', 'oi'))
+        }
+
+        if (includeVolume) {
+            slots.push(createSlot('put', 'down', 'vol', 1))
+            slots.push(createSlot('call', 'up', 'vol', 1))
+        }
     } else {
         if (includeOpenInterest) {
             slots.push({
@@ -141,10 +152,14 @@ function buildChartSeries(
         if (diff > 0) strikeDiffs.push(diff)
     }
     const minGap = strikeDiffs.length > 0 ? Math.min(...strikeDiffs) : 1
-    const laneStep = slots.length > 1 ? Math.max(minGap * 0.12, 0.03) : 0
+    const uniqueGroups = new Set(slots.map(s => s.group ?? s.id))
+    const groupKeys = [...uniqueGroups]
+    const laneStep = groupKeys.length > 1 ? Math.max(minGap * 0.12, 0.03) : 0
 
-    const series = slots.map((slot, slotIndex) => {
-        const offset = laneStep * (slotIndex - (slots.length - 1) / 2)
+    const series = slots.map((slot) => {
+        const groupKey = slot.group ?? slot.id
+        const groupIndex = groupKeys.indexOf(groupKey)
+        const offset = laneStep * (groupIndex - (groupKeys.length - 1) / 2)
         const data = strikes.map(strike => {
             const value = slot.getValue(strike)
             const time = strike.strike + offset

@@ -24,6 +24,7 @@ export type SlotDescriptor = {
     getValue: (strike: StrikeMetrics) => number
     color?: string
     getColor?: (value: number) => string
+    group?: number
 }
 
 export type ChartSeries = {
