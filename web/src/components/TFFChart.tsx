@@ -80,137 +80,107 @@ export type RawTFFData = {
 
 type DataType = 'net' | 'long' | 'short'
 
-export type ProcessedPoint = {
-    time: string
-    assetManagers: number
-    leveragedFunds: number
-    dealers: number
-    otherReportables: number
-}
-
 const seriesConfig = [
     { key: 'assetManagers', label: 'Asset Managers', color: '#2563eb' },
     { key: 'leveragedFunds', label: 'Leveraged Funds', color: '#16a34a' },
     { key: 'dealers', label: 'Dealers', color: '#dc2626' },
-    { key: 'otherReportables', label: 'Other Reportables', color: '#94a3b8' }
+    { key: 'otherReportables', label: 'Other Reportables', color: '#94a3b8' },
 ] as const
 
-export function processTFFData(data: RawTFFData[], dataType: DataType): ProcessedPoint[] {
+function processTFFData(data: RawTFFData[], dataType: DataType) {
     const fn = (val: string) => Number(val ?? '0')
+    const getVal = (long: number, short: number) => {
+        if (dataType === 'long') return long
+        if (dataType === 'short') return short
+        return long - short
+    }
 
-    return data.map(row => {
-        const amLong = fn(row.asset_mgr_positions_long)
-        const amShort = fn(row.asset_mgr_positions_short)
-
-        const lfLong = fn(row.lev_money_positions_long)
-        const lfShort = fn(row.lev_money_positions_short)
-
-        const dealerLong = fn(row.dealer_positions_long_all)
-        const dealerShort = fn(row.dealer_positions_short_all)
-
-        const otherLong = fn(row.other_rept_positions_long)
-        const otherShort = fn(row.other_rept_positions_short)
-
-        const getVal = (long: number, short: number) => {
-            if (dataType === 'long') return long
-            if (dataType === 'short') return short
-            return long - short
-        }
-
-        return {
-            time: row.report_date_as_yyyy_mm_dd.split('T')[0],
-            assetManagers: getVal(amLong, amShort),
-            leveragedFunds: getVal(lfLong, lfShort),
-            dealers: getVal(dealerLong, dealerShort),
-            otherReportables: getVal(otherLong, otherShort)
-        }
-    })
+    return data.map(row => ({
+        time: row.report_date_as_yyyy_mm_dd.split('T')[0],
+        assetManagers: getVal(fn(row.asset_mgr_positions_long), fn(row.asset_mgr_positions_short)),
+        leveragedFunds: getVal(fn(row.lev_money_positions_long), fn(row.lev_money_positions_short)),
+        dealers: getVal(fn(row.dealer_positions_long_all), fn(row.dealer_positions_short_all)),
+        otherReportables: getVal(fn(row.other_rept_positions_long), fn(row.other_rept_positions_short)),
+    }))
 }
 
 export function TFFChart({ data }: { data: RawTFFData[] }) {
     const chartContainerRef = useRef<HTMLDivElement>(null)
+    const seriesMap = useRef<Map<string, any>>(new Map())
     const [dataType, setDataType] = useState<DataType>('net')
     const [legend, setLegend] = useState<any>(null)
 
-    const processedData = processTFFData(data, dataType)
-
     useEffect(() => {
         if (!chartContainerRef.current) return
-
         const chart = createChart(chartContainerRef.current)
-
-        const seriesMap = new Map<any, string>()
+        const seriesByInstance = new Map<any, string>()
 
         seriesConfig.forEach(conf => {
-            const series = chart.addSeries(LineSeries, {
-                color: conf.color, lineWidth: 2, title: conf.label
-            })
-            series.setData(processedData.map(d => ({ time: d.time, value: Number((d as any)[conf.key] ?? 0) })))
-            seriesMap.set(series, conf.label)
+            const series = chart.addSeries(LineSeries, { color: conf.color, lineWidth: 2, title: conf.label })
+            seriesMap.current.set(conf.key, series)
+            seriesByInstance.set(series, conf.label)
         })
 
         chart.subscribeCrosshairMove((param) => {
             const container = chartContainerRef.current
-            if (
-                param.point === undefined ||
-                !param.time ||
-                !container ||
-                param.point.x < 0 ||
-                param.point.x > container.clientWidth ||
-                param.point.y < 0 ||
-                param.point.y > container.clientHeight
-            ) {
+            if (!param.time || !container || param.point === undefined
+                || param.point.x < 0 || param.point.x > container.clientWidth
+                || param.point.y < 0 || param.point.y > container.clientHeight) {
                 setLegend(null)
-            } else {
-                const legendData: any = { date: param.time }
-                param.seriesData.forEach((value, series) => {
-                    const label = seriesMap.get(series)
-                    if (label) {
-                        legendData[label] = (value as any).value
-                    }
-                })
-                setLegend(legendData)
+                return
             }
+            const entry: Record<string, any> = { date: param.time }
+            param.seriesData.forEach((value, series) => {
+                const label = seriesByInstance.get(series)
+                if (label) entry[label] = (value as any).value
+            })
+            setLegend(entry)
         })
 
         const handleResize = () => {
-            if (chartContainerRef.current) {
+            if (chartContainerRef.current)
                 chart.applyOptions({ width: chartContainerRef.current.clientWidth })
-            }
         }
         window.addEventListener('resize', handleResize)
-
         chart.timeScale().fitContent()
 
         return () => {
             window.removeEventListener('resize', handleResize)
             chart.remove()
+            seriesMap.current.clear()
         }
-    }, [processedData])
+    }, [])
+
+    useEffect(() => {
+        const processedData = processTFFData(data, dataType)
+        seriesConfig.forEach(conf => {
+            const series = seriesMap.current.get(conf.key)
+            if (!series) return
+            series.setData(processedData.map(d => ({ time: d.time, value: d[conf.key] })))
+        })
+    }, [data, dataType])
 
     return (
         <div un-flex="~ col gap-2" un-border="~ slate-200 rounded" un-shadow="sm" un-p="4">
             <div un-flex="~ gap-4 items-center justify-between">
                 <div un-flex="~ gap-3">
-                    {seriesConfig.map((conf) => (
+                    {seriesConfig.map(conf => (
                         <div key={conf.key} un-flex="~ gap-2 items-center">
-                            <div un-w="3" un-h="3" un-rounded="full" style={{ backgroundColor: conf.color }}></div>
+                            <div un-w="3" un-h="3" un-rounded="full" style={{ backgroundColor: conf.color }} />
                             <span un-text="sm" style={{ color: conf.color }}>{conf.label}</span>
                         </div>
                     ))}
                 </div>
-
-                <div un-flex="~ gap-1" un-bg='slate-100' un-border='rounded-lg' un-p="1">
+                <div un-flex="~ gap-1" un-bg="slate-100" un-rounded="lg" un-p="1">
                     {(['net', 'long', 'short'] as const).map(t => (
                         <button
                             key={t}
                             onClick={() => setDataType(t)}
-                            un-cursor='pointer'
-                            un-p="x-3 y-1"
-                            un-rounded="md"
-                            un-bg={`${dataType === t ? 'white' : 'slate-100'}`}
+                            un-cursor="pointer"
+                            un-p="x-3 y-1" un-rounded="md"
+                            un-bg={dataType === t ? 'white' : 'slate-100'}
                             un-text={`sm ${dataType === t ? 'slate-800' : 'slate-500'}`}
-                            un-shadow={`${dataType === t ? 'shadow-sm' : ''}`}
+                            un-shadow={dataType === t ? 'sm' : 'none'}
                         >
                             {t}
                         </button>
@@ -220,7 +190,7 @@ export function TFFChart({ data }: { data: RawTFFData[] }) {
 
             <div un-position="relative" un-h="lg">
                 {legend && (
-                    <div un-position="absolute top-2 left-2" un-z="10" un-p="3" un-bg='white/90 backdrop-blur-sm' un-shadow="sm" un-border="~ slate-200 rounded-lg" un-text="sm" un-font="mono">
+                    <div un-position="absolute top-2 left-2" un-z="10" un-p="3" un-bg="white/90" un-shadow="sm" un-border="~ slate-200 rounded-lg" un-text="sm" un-font="mono">
                         <div un-text="slate-500" un-mb="1">{legend.date}</div>
                         <div un-flex="~ col gap-1">
                             {seriesConfig.map(conf => {
@@ -229,7 +199,7 @@ export function TFFChart({ data }: { data: RawTFFData[] }) {
                                 return (
                                     <div key={conf.key} un-flex="~ gap-4 justify-between items-center">
                                         <div un-flex="~ items-center gap-2">
-                                            <div un-w="2" un-h="2" un-rounded="full" style={{ backgroundColor: conf.color }}></div>
+                                            <div un-w="2" un-h="2" un-rounded="full" style={{ backgroundColor: conf.color }} />
                                             <span style={{ color: conf.color }} un-font="semibold">{conf.label}</span>
                                         </div>
                                         <span un-font="semibold">{val.toLocaleString()}</span>

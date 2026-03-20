@@ -45,13 +45,14 @@ const seriesConfig = [
 ] as const
 
 export function processPhysicalData(data: RawPhysicalData[], dataType: DataType): ProcessedPoint[] {
-    const sorted = data.slice().sort((a, b) =>
-        String(a.report_date_as_yyyy_mm_dd || '').localeCompare(String(b.report_date_as_yyyy_mm_dd || ''))
-    )
-
     const fn = (val: string) => Number(val ?? '0')
+    const getVal = (long: number, short: number) => {
+        if (dataType === 'long') return long
+        if (dataType === 'short') return short
+        return long - short
+    }
 
-    return sorted.map(row => {
+    return data.map(row => {
         const prodLong = fn(row.prod_merc_positions_long)
         const prodShort = fn(row.prod_merc_positions_short)
 
@@ -63,12 +64,6 @@ export function processPhysicalData(data: RawPhysicalData[], dataType: DataType)
 
         const otherLong = fn(row.other_rept_positions_long)
         const otherShort = fn(row.other_rept_positions_short)
-
-        const getVal = (long: number, short: number) => {
-            if (dataType === 'long') return long
-            if (dataType === 'short') return short
-            return long - short
-        }
 
         return {
             time: row.report_date_as_yyyy_mm_dd.split('T')[0],
@@ -82,24 +77,22 @@ export function processPhysicalData(data: RawPhysicalData[], dataType: DataType)
 
 export function PhysicalTFFChart({ data }: { data: RawPhysicalData[] }) {
     const chartContainerRef = useRef<HTMLDivElement>(null)
+    const seriesMap = useRef<Map<string, any>>(new Map())
     const [dataType, setDataType] = useState<DataType>('net')
     const [legend, setLegend] = useState<any>(null)
-
-    const processedData = processPhysicalData(data, dataType)
 
     useEffect(() => {
         if (!chartContainerRef.current) return
 
         const chart = createChart(chartContainerRef.current)
-
-        const seriesMap = new Map<any, string>()
+        const seriesByInstance = new Map<any, string>()
 
         seriesConfig.forEach(conf => {
             const series = chart.addSeries(LineSeries, {
                 color: conf.color, lineWidth: 2, title: conf.label
             })
-            series.setData(processedData.map(d => ({ time: d.time, value: Number((d as any)[conf.key] ?? 0) })))
-            seriesMap.set(series, conf.label)
+            seriesMap.current.set(conf.key, series)
+            seriesByInstance.set(series, conf.label)
         })
 
         chart.subscribeCrosshairMove((param) => {
@@ -117,10 +110,8 @@ export function PhysicalTFFChart({ data }: { data: RawPhysicalData[] }) {
             } else {
                 const legendData: any = { date: param.time }
                 param.seriesData.forEach((value, series) => {
-                    const label = seriesMap.get(series)
-                    if (label) {
-                        legendData[label] = (value as any).value
-                    }
+                    const label = seriesByInstance.get(series)
+                    if (label) legendData[label] = (value as any).value
                 })
                 setLegend(legendData)
             }
@@ -138,8 +129,18 @@ export function PhysicalTFFChart({ data }: { data: RawPhysicalData[] }) {
         return () => {
             window.removeEventListener('resize', handleResize)
             chart.remove()
+            seriesMap.current.clear()
         }
-    }, [processedData])
+    }, [])
+
+    useEffect(() => {
+        const processedData = processPhysicalData(data, dataType)
+        seriesConfig.forEach(conf => {
+            const series = seriesMap.current.get(conf.key)
+            if (!series) return
+            series.setData(processedData.map(d => ({ time: d.time, value: d[conf.key] })))
+        })
+    }, [data, dataType])
 
     return (
         <div un-flex="~ col gap-2" un-border="~ slate-200 rounded" un-shadow="sm" un-p="4">

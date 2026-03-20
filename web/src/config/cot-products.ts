@@ -79,11 +79,8 @@ export const DEFAULT_PRODUCT: Record<ReportType, string> = {
     tff: 'spx',
 }
 
-export const getProduct = (key: string, type: ReportType) =>
-    PRODUCTS.find(p => p.key === key && p.type === type) ?? null
+export const getProduct = (key: string, type: ReportType) => PRODUCTS.find(p => p.key === key && p.type === type) ?? null
 
-export const getProductsByType = (type: ReportType) =>
-    PRODUCTS.filter(p => p.type === type)
+export const getProductsByType = (type: ReportType) => PRODUCTS.filter(p => p.type === type)
 
-export const getCategoriesForType = (type: ReportType) =>
-    [...new Set(getProductsByType(type).map(p => p.category))]
+export const getCategoriesForType = (type: ReportType) => [...new Set(getProductsByType(type).map(p => p.category))]
