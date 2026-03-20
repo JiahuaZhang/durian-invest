@@ -104,7 +104,7 @@ function Overview() {
         <StockHeatmap {...commonProps} exchanges={["NYSE", "NASDAQ"]} />
       </div>
 
-      <div un-w='sm'>
+      <div un-w='sm' un-min-h='lg' >
         <EconomicCalendar
           width="100%"
           height="100%"
