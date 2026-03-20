@@ -2,6 +2,9 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:publicreporting.cftc.gov)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\大声\\Documents\\explore\\durian-invest\\web\\src\\routes"
     ]
   }
 }

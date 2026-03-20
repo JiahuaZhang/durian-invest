@@ -16,10 +16,6 @@ import { Route as CotRouteImport } from './routes/cot'
 import { Route as AnalysisRouteImport } from './routes/analysis'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DomBtcRouteImport } from './routes/dom.btc'
-import { Route as CotSpxRouteImport } from './routes/cot.spx'
-import { Route as CotSilverRouteImport } from './routes/cot.silver'
-import { Route as CotNdxRouteImport } from './routes/cot.ndx'
-import { Route as CotGoldRouteImport } from './routes/cot.gold'
 
 const OverviewRoute = OverviewRouteImport.update({
   id: '/overview',
@@ -56,65 +52,33 @@ const DomBtcRoute = DomBtcRouteImport.update({
   path: '/dom/btc',
   getParentRoute: () => rootRouteImport,
 } as any)
-const CotSpxRoute = CotSpxRouteImport.update({
-  id: '/spx',
-  path: '/spx',
-  getParentRoute: () => CotRoute,
-} as any)
-const CotSilverRoute = CotSilverRouteImport.update({
-  id: '/silver',
-  path: '/silver',
-  getParentRoute: () => CotRoute,
-} as any)
-const CotNdxRoute = CotNdxRouteImport.update({
-  id: '/ndx',
-  path: '/ndx',
-  getParentRoute: () => CotRoute,
-} as any)
-const CotGoldRoute = CotGoldRouteImport.update({
-  id: '/gold',
-  path: '/gold',
-  getParentRoute: () => CotRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analysis': typeof AnalysisRoute
-  '/cot': typeof CotRouteWithChildren
+  '/cot': typeof CotRoute
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
-  '/cot/gold': typeof CotGoldRoute
-  '/cot/ndx': typeof CotNdxRoute
-  '/cot/silver': typeof CotSilverRoute
-  '/cot/spx': typeof CotSpxRoute
   '/dom/btc': typeof DomBtcRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analysis': typeof AnalysisRoute
-  '/cot': typeof CotRouteWithChildren
+  '/cot': typeof CotRoute
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
-  '/cot/gold': typeof CotGoldRoute
-  '/cot/ndx': typeof CotNdxRoute
-  '/cot/silver': typeof CotSilverRoute
-  '/cot/spx': typeof CotSpxRoute
   '/dom/btc': typeof DomBtcRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/analysis': typeof AnalysisRoute
-  '/cot': typeof CotRouteWithChildren
+  '/cot': typeof CotRoute
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
-  '/cot/gold': typeof CotGoldRoute
-  '/cot/ndx': typeof CotNdxRoute
-  '/cot/silver': typeof CotSilverRoute
-  '/cot/spx': typeof CotSpxRoute
   '/dom/btc': typeof DomBtcRoute
 }
 export interface FileRouteTypes {
@@ -126,10 +90,6 @@ export interface FileRouteTypes {
     | '/history'
     | '/news'
     | '/overview'
-    | '/cot/gold'
-    | '/cot/ndx'
-    | '/cot/silver'
-    | '/cot/spx'
     | '/dom/btc'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -139,10 +99,6 @@ export interface FileRouteTypes {
     | '/history'
     | '/news'
     | '/overview'
-    | '/cot/gold'
-    | '/cot/ndx'
-    | '/cot/silver'
-    | '/cot/spx'
     | '/dom/btc'
   id:
     | '__root__'
@@ -152,17 +108,13 @@ export interface FileRouteTypes {
     | '/history'
     | '/news'
     | '/overview'
-    | '/cot/gold'
-    | '/cot/ndx'
-    | '/cot/silver'
-    | '/cot/spx'
     | '/dom/btc'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalysisRoute: typeof AnalysisRoute
-  CotRoute: typeof CotRouteWithChildren
+  CotRoute: typeof CotRoute
   HistoryRoute: typeof HistoryRoute
   NewsRoute: typeof NewsRoute
   OverviewRoute: typeof OverviewRoute
@@ -220,57 +172,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DomBtcRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/cot/spx': {
-      id: '/cot/spx'
-      path: '/spx'
-      fullPath: '/cot/spx'
-      preLoaderRoute: typeof CotSpxRouteImport
-      parentRoute: typeof CotRoute
-    }
-    '/cot/silver': {
-      id: '/cot/silver'
-      path: '/silver'
-      fullPath: '/cot/silver'
-      preLoaderRoute: typeof CotSilverRouteImport
-      parentRoute: typeof CotRoute
-    }
-    '/cot/ndx': {
-      id: '/cot/ndx'
-      path: '/ndx'
-      fullPath: '/cot/ndx'
-      preLoaderRoute: typeof CotNdxRouteImport
-      parentRoute: typeof CotRoute
-    }
-    '/cot/gold': {
-      id: '/cot/gold'
-      path: '/gold'
-      fullPath: '/cot/gold'
-      preLoaderRoute: typeof CotGoldRouteImport
-      parentRoute: typeof CotRoute
-    }
   }
 }
-
-interface CotRouteChildren {
-  CotGoldRoute: typeof CotGoldRoute
-  CotNdxRoute: typeof CotNdxRoute
-  CotSilverRoute: typeof CotSilverRoute
-  CotSpxRoute: typeof CotSpxRoute
-}
-
-const CotRouteChildren: CotRouteChildren = {
-  CotGoldRoute: CotGoldRoute,
-  CotNdxRoute: CotNdxRoute,
-  CotSilverRoute: CotSilverRoute,
-  CotSpxRoute: CotSpxRoute,
-}
-
-const CotRouteWithChildren = CotRoute._addFileChildren(CotRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalysisRoute: AnalysisRoute,
-  CotRoute: CotRouteWithChildren,
+  CotRoute: CotRoute,
   HistoryRoute: HistoryRoute,
   NewsRoute: NewsRoute,
   OverviewRoute: OverviewRoute,
