@@ -9,7 +9,8 @@ import {
     Menu,
     Newspaper,
     PieChart,
-    PiggyBank
+    PiggyBank,
+    Zap
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -25,6 +26,7 @@ export function Sidebar() {
         { icon: PieChart, label: 'COT Report', to: '/cot' },
         { icon: BarChart3, label: 'Depth (DOM)', to: '/dom/btc' },
         { icon: History, label: 'History', to: '/history' },
+        { icon: Zap, label: 'Unusual Options', to: '/option/unusual/barchart' },
     ]
 
     return (

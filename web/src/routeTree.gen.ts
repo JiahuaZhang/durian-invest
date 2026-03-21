@@ -16,6 +16,7 @@ import { Route as CotRouteImport } from './routes/cot'
 import { Route as AnalysisRouteImport } from './routes/analysis'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DomBtcRouteImport } from './routes/dom.btc'
+import { Route as OptionUnusualBarchartRouteImport } from './routes/option.unusual.barchart'
 
 const OverviewRoute = OverviewRouteImport.update({
   id: '/overview',
@@ -52,6 +53,11 @@ const DomBtcRoute = DomBtcRouteImport.update({
   path: '/dom/btc',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OptionUnusualBarchartRoute = OptionUnusualBarchartRouteImport.update({
+  id: '/option/unusual/barchart',
+  path: '/option/unusual/barchart',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
   '/dom/btc': typeof DomBtcRoute
+  '/option/unusual/barchart': typeof OptionUnusualBarchartRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
   '/dom/btc': typeof DomBtcRoute
+  '/option/unusual/barchart': typeof OptionUnusualBarchartRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
   '/dom/btc': typeof DomBtcRoute
+  '/option/unusual/barchart': typeof OptionUnusualBarchartRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/overview'
     | '/dom/btc'
+    | '/option/unusual/barchart'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/overview'
     | '/dom/btc'
+    | '/option/unusual/barchart'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/overview'
     | '/dom/btc'
+    | '/option/unusual/barchart'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   NewsRoute: typeof NewsRoute
   OverviewRoute: typeof OverviewRoute
   DomBtcRoute: typeof DomBtcRoute
+  OptionUnusualBarchartRoute: typeof OptionUnusualBarchartRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DomBtcRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/option/unusual/barchart': {
+      id: '/option/unusual/barchart'
+      path: '/option/unusual/barchart'
+      fullPath: '/option/unusual/barchart'
+      preLoaderRoute: typeof OptionUnusualBarchartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   NewsRoute: NewsRoute,
   OverviewRoute: OverviewRoute,
   DomBtcRoute: DomBtcRoute,
+  OptionUnusualBarchartRoute: OptionUnusualBarchartRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
