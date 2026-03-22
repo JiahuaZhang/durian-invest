@@ -1,4 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
+import { z } from 'zod'
 
 export type UnusualOption = {
     symbol: string
@@ -15,8 +16,25 @@ export type UnusualOption = {
     openInterest: number
     volumeOpenInterestRatio: number
     delta: number
+    gamma?: number
+    theta?: number
+    vega?: number
+    rho?: number
     tradeTime: string
 }
+
+export const querySchema = z.object({
+    assetType: z.enum(['stock', 'etf', 'index', 'stock,etf', 'stock,etf,index']).default('stock'),
+    orderBy: z.string().default('volumeOpenInterestRatio'),
+    orderDir: z.enum(['asc', 'desc']).default('desc'),
+    limit: z.number().min(1).max(1000).default(200),
+    minVolOI: z.number().min(0).default(1.24),
+    minVolume: z.number().min(0).default(0),
+    maxDTE: z.number().min(0).default(0),
+    showGreeks: z.boolean().default(false),
+})
+
+export type QueryParams = z.infer<typeof querySchema>
 
 type RawRecord = Record<string, string | number | Record<string, unknown>>
 
@@ -28,12 +46,14 @@ type BarchartApiResponse = {
 
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 
-const FIELDS = [
+const BASE_FIELDS = [
     'symbol', 'baseLastPrice', 'strikePrice', 'expirationDate',
-    'daysToExpiration', 'putCall', 'bidPrice', 'lastPrice', 'askPrice',
+    'daysToExpiration', 'symbolType', 'bidPrice', 'lastPrice', 'askPrice',
     'volume', 'openInterest', 'volumeOpenInterestRatio',
     'tradeTime', 'moneyness', 'delta',
-].join(',')
+]
+
+const GREEK_FIELDS = ['gamma', 'theta', 'vega', 'rho']
 
 async function fetchWithAuth(): Promise<{ cookies: string; xsrfToken: string }> {
     const res = await fetch('https://www.barchart.com/options/unusual-activity/stocks', {
@@ -59,31 +79,39 @@ async function fetchWithAuth(): Promise<{ cookies: string; xsrfToken: string }> 
     return { cookies, xsrfToken }
 }
 
-/**
- * Detect Call/Put from the barchart option symbol convention.
- * Symbol format: "AAPL|20260417|170.00C" — last char is C (Call) or P (Put)
- */
-function detectPutCall(symbol: string, putCallField: unknown): 'Call' | 'Put' {
-    if (putCallField === 'Put' || putCallField === 'Call') return putCallField
-    // Check last character of the full symbol (before parsing)
-    const lastChar = symbol.slice(-1).toUpperCase()
-    return lastChar === 'P' ? 'Put' : 'Call'
-}
-
 export const fetchUnusualOptions = createServerFn({ method: 'GET' })
-    .handler(async () => {
+    .inputValidator((input?: QueryParams) => querySchema.parse(input ?? {}))
+    .handler(async ({ data: q }) => {
         const { cookies, xsrfToken } = await fetchWithAuth()
 
+        const fields = q.showGreeks
+            ? [...BASE_FIELDS, ...GREEK_FIELDS].join(',')
+            : BASE_FIELDS.join(',')
+
         const params = new URLSearchParams({
-            fields: FIELDS,
-            baseSymbolTypes: 'stock',
-            orderBy: 'volumeOpenInterestRatio',
-            orderDir: 'desc',
-            limit: '200',
+            fields,
+            baseSymbolTypes: q.assetType,
+            orderBy: q.orderBy,
+            orderDir: q.orderDir,
+            limit: String(q.limit),
             meta: 'field.shortName,field.type,field.description',
             raw: '1',
         })
-        params.append('between(volumeOpenInterestRatio,1.24,)', '')
+
+        // Vol/OI ratio filter
+        if (q.minVolOI > 0) {
+            params.append(`between(volumeOpenInterestRatio,${q.minVolOI},)`, '')
+        }
+
+        // Volume filter
+        if (q.minVolume > 0) {
+            params.append(`between(volume,${q.minVolume},)`, '')
+        }
+
+        // DTE filter
+        if (q.maxDTE > 0) {
+            params.append(`between(daysToExpiration,0,${q.maxDTE})`, '')
+        }
 
         const apiUrl = `https://www.barchart.com/proxies/core-api/v1/options/get?${params.toString()}`
 
@@ -109,17 +137,22 @@ export const fetchUnusualOptions = createServerFn({ method: 'GET' })
         }
 
         const options: UnusualOption[] = json.data.map(record => {
-            // Each record has a 'raw' property with actual numeric values
             const raw = (record.raw ?? {}) as Record<string, unknown>
             const fullSymbol = String(raw.symbol ?? record.symbol ?? '')
             const ticker = fullSymbol.split('|')[0]
 
-            return {
+            // symbolType returns "Call" / "Put" directly
+            const symbolType = String(record.symbolType ?? '')
+            const putCall: 'Call' | 'Put' = symbolType === 'Put' ? 'Put'
+                : symbolType === 'Call' ? 'Call'
+                    : fullSymbol.slice(-1).toUpperCase() === 'P' ? 'Put' : 'Call'
+
+            const opt: UnusualOption = {
                 symbol: ticker,
                 baseLastPrice: Number(raw.baseLastPrice ?? 0),
                 expirationDate: String(record.expirationDate ?? ''),
                 daysToExpiration: Number(raw.daysToExpiration ?? 0),
-                putCall: detectPutCall(fullSymbol, record.putCall),
+                putCall,
                 strikePrice: Number(raw.strikePrice ?? 0),
                 moneyness: Number(raw.moneyness ?? 0),
                 bidPrice: Number(raw.bidPrice ?? 0),
@@ -131,11 +164,21 @@ export const fetchUnusualOptions = createServerFn({ method: 'GET' })
                 delta: Number(raw.delta ?? 0),
                 tradeTime: String(record.tradeTime ?? ''),
             }
+
+            if (q.showGreeks) {
+                opt.gamma = Number(raw.gamma ?? 0)
+                opt.theta = Number(raw.theta ?? 0)
+                opt.vega = Number(raw.vega ?? 0)
+                opt.rho = Number(raw.rho ?? 0)
+            }
+
+            return opt
         })
 
         return {
             options,
             total: json.total ?? options.length,
             fetchedAt: new Date().toISOString(),
+            query: q,
         }
     })

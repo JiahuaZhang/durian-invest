@@ -1,15 +1,50 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
-import { fetchUnusualOptions, type UnusualOption } from '../utils/barchart-unusual'
+import { fetchUnusualOptions, querySchema, type QueryParams, type UnusualOption } from '../utils/barchart-unusual'
 
 type SortField = keyof UnusualOption
 type SortDir = 'asc' | 'desc'
+
+const SORT_OPTIONS = [
+    { value: 'volumeOpenInterestRatio', label: 'Vol/OI' },
+    { value: 'volume', label: 'Volume' },
+    { value: 'openInterest', label: 'Open Int' },
+    { value: 'delta', label: 'Delta' },
+    { value: 'daysToExpiration', label: 'DTE' },
+    { value: 'baseLastPrice', label: 'Price' },
+    { value: 'moneyness', label: 'Moneyness' },
+] as const
+
+const ASSET_TYPES = [
+    { value: 'stock', label: 'Stocks' },
+    { value: 'etf', label: 'ETFs' },
+    { value: 'index', label: 'Indices' },
+    { value: 'stock,etf', label: 'Stocks + ETFs' },
+    { value: 'stock,etf,index', label: 'All' },
+] as const
+
+const LIMIT_OPTIONS = [100, 200, 500, 1000] as const
+
+function validateSearch(search: Record<string, unknown>): QueryParams {
+    return querySchema.parse({
+        assetType: search.assetType ?? 'stock',
+        orderBy: search.orderBy ?? 'volumeOpenInterestRatio',
+        orderDir: search.orderDir ?? 'desc',
+        limit: search.limit != null ? Number(search.limit) : 200,
+        minVolOI: search.minVolOI != null ? Number(search.minVolOI) : 1.24,
+        minVolume: search.minVolume != null ? Number(search.minVolume) : 0,
+        maxDTE: search.maxDTE != null ? Number(search.maxDTE) : 0,
+        showGreeks: search.showGreeks === true || search.showGreeks === 'true',
+    })
+}
 
 export const Route = createFileRoute('/option/unusual/barchart')({
     head: () => ({
         meta: [{ title: 'Unusual Options Activity' }],
     }),
-    loader: async () => fetchUnusualOptions(),
+    validateSearch,
+    loaderDeps: ({ search }) => search,
+    loader: async ({ deps }) => fetchUnusualOptions({ data: deps }),
     component: UnusualOptionsPage,
     pendingComponent: () => (
         <div un-flex="~ col items-center justify-center" un-py="20">
@@ -32,12 +67,16 @@ export const Route = createFileRoute('/option/unusual/barchart')({
 })
 
 function UnusualOptionsPage() {
-    const { options, total, fetchedAt } = Route.useLoaderData()
-
+    const { options, total, fetchedAt, query } = Route.useLoaderData()
+    const navigate = useNavigate({ from: '/option/unusual/barchart' })
     const [typeFilter, setTypeFilter] = useState<'all' | 'Call' | 'Put'>('all')
     const [symbolSearch, setSymbolSearch] = useState('')
     const [sortField, setSortField] = useState<SortField>('volumeOpenInterestRatio')
     const [sortDir, setSortDir] = useState<SortDir>('desc')
+
+    function updateQuery(patch: Partial<QueryParams>) {
+        navigate({ search: (prev: QueryParams) => ({ ...prev, ...patch }) })
+    }
 
     const filtered = useMemo(() => {
         let result = options
@@ -91,7 +130,7 @@ function UnusualOptionsPage() {
     }
 
     return (
-        <div un-p="3" un-flex="~ col" un-gap="3">
+        <div un-p="x-2 y-3" un-flex="~ col" un-gap="3">
             {/* Header */}
             <div un-flex="~ justify-between items-center wrap gap-2">
                 <div un-flex='~ gap-2' >
@@ -111,7 +150,114 @@ function UnusualOptionsPage() {
                 </button>
             </div>
 
-            {/* Stats Bar */}
+            {/* Query Controls — triggers server re-fetch */}
+            <div un-border="~ slate-200 rounded-xl" un-p="x-3 y-1" un-bg="slate-50/50" un-flex="~ gap-4">
+                <div un-flex="~ gap-1 items-center">
+                    <label un-text="xs slate-500">Asset Type: </label>
+                    <div un-flex="~ gap-1">
+                        {ASSET_TYPES.map(at => (
+                            <button key={at.value}
+                                un-p="x-2.5 y-1" un-text="xs" un-cursor="pointer" un-transition="all"
+                                un-border="~ rounded-md"
+                                un-bg={query.assetType === at.value ? 'blue-500' : 'white hover:slate-50'}
+                                un-text-color={query.assetType === at.value ? 'white' : 'slate-600'}
+                                un-border-color={query.assetType === at.value ? 'blue-500' : 'slate-200'}
+                                onClick={() => updateQuery({ assetType: at.value as QueryParams['assetType'] })}
+                            >
+                                {at.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div un-flex="~ gap-1 items-center">
+                    <label un-text="xs slate-500">Sort By: </label>
+                    <select
+                        value={query.orderBy}
+                        onChange={e => updateQuery({ orderBy: e.target.value })}
+                        un-border="~ slate-200 rounded-md" un-p="x-2 y-1" un-text="xs"
+                        un-cursor="pointer"
+                    >
+                        {SORT_OPTIONS.map(s => (
+                            <option key={s.value} value={s.value}>{s.label}</option>
+                        ))}
+                    </select>
+                    <button
+                        onClick={() => updateQuery({ orderDir: query.orderDir === 'desc' ? 'asc' : 'desc' })}
+                        un-border="~ slate-200 rounded-md" un-p="x-2 y-1" un-text="xs white"
+                        un-bg={query.orderDir === 'desc' ? 'green-500 hover:green-800' : 'yellow-500 hover:yellow-800'}
+                        un-cursor="pointer" un-transition="all"
+                    >
+                        {query.orderDir === 'desc' ? '↓ Desc' : '↑ Asc'}
+                    </button>
+                </div>
+
+                <div un-flex="~ gap-1 items-center">
+                    <label un-text="xs slate-500">Limit: </label>
+                    <div un-flex="~ gap-1">
+                        {LIMIT_OPTIONS.map(n => (
+                            <button key={n}
+                                un-p="x-2 y-1" un-text="xs" un-cursor="pointer" un-transition="all"
+                                un-border="~ rounded-md"
+                                un-bg={query.limit === n ? 'blue-500' : 'white hover:slate-50'}
+                                un-text-color={query.limit === n ? 'white' : 'slate-600'}
+                                un-border-color={query.limit === n ? 'blue-500' : 'slate-200'}
+                                onClick={() => updateQuery({ limit: n })}
+                            >
+                                {n}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div un-flex="~ gap-1 items-center">
+                    <label un-text="xs slate-500">Min Vol/OI: </label>
+                    <input type="number" step="0.1" min="0"
+                        defaultValue={query.minVolOI}
+                        onBlur={e => { const v = parseFloat(e.target.value) || 0; if (v !== query.minVolOI) updateQuery({ minVolOI: v }) }}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        un-border="~ slate-200 rounded-md" un-p="x-2 y-1" un-text="xs" un-w="16"
+                        un-outline="focus:blue-400"
+                    />
+                </div>
+
+                <div un-flex="~ gap-1 items-center">
+                    <label un-text="xs slate-500">Min Volume: </label>
+                    <input type="number" step="100" min="0"
+                        defaultValue={query.minVolume}
+                        onBlur={e => { const v = parseInt(e.target.value) || 0; if (v !== query.minVolume) updateQuery({ minVolume: v }) }}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        un-border="~ slate-200 rounded-md" un-p="x-2 y-1" un-text="xs" un-w="18"
+                        un-outline="focus:blue-400"
+                    />
+                </div>
+
+                <div un-flex="~ gap-1 items-center">
+                    <label un-text="xs slate-500">Max DTE: </label>
+                    <input type="number" step="1" min="0"
+                        defaultValue={query.maxDTE || ''}
+                        placeholder="any"
+                        onBlur={e => { const v = parseInt(e.target.value) || 0; if (v !== query.maxDTE) updateQuery({ maxDTE: v }) }}
+                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        un-border="~ slate-200 rounded-md" un-p="x-2 y-1" un-text="xs" un-w="16"
+                        un-outline="focus:blue-400"
+                    />
+                </div>
+
+                <div un-flex="~ gap-1 items-center">
+                    <label un-text="xs slate-500">Greeks: </label>
+                    <button
+                        onClick={() => updateQuery({ showGreeks: !query.showGreeks })}
+                        un-w="9" un-h="5" un-rounded="full" un-cursor="pointer" un-transition="all"
+                        un-bg={query.showGreeks ? 'blue-600' : 'slate-300'}
+                        un-p="0.5" un-flex="~ items-center"
+                    >
+                        <div un-w="4" un-h="4" un-rounded="full" un-bg="white" un-transition="all"
+                            un-translate-x={query.showGreeks ? '4' : '0'} />
+                    </button>
+                </div>
+            </div>
+
             <div un-grid="~ gap-2 cols-[repeat(auto-fit,minmax(3rem,1fr))]" >
                 <MiniStat label="Total Contracts" value={stats.total.toString()} />
                 <MiniStat label="Calls" value={stats.calls.toString()} color="emerald-600" />
@@ -138,7 +284,7 @@ function UnusualOptionsPage() {
                 ))}
             </div>
 
-            {/* Filters */}
+            {/* Client-side Filters */}
             <div un-flex="~ gap-3 items-center wrap" un-border="~ slate-200 rounded-xl" un-p="2">
                 <div un-flex="~ gap-1 items-center">
                     {(['all', 'Call', 'Put'] as const).map(t => (
@@ -190,12 +336,19 @@ function UnusualOptionsPage() {
                             <TH field="openInterest" label="Open Int" onSort={handleSort} sortField={sortField} sortDir={sortDir} />
                             <TH field="volumeOpenInterestRatio" label="Vol/OI" onSort={handleSort} sortField={sortField} sortDir={sortDir} />
                             <TH field="delta" label="Delta" onSort={handleSort} sortField={sortField} sortDir={sortDir} />
+                            {query.showGreeks && <>
+                                <TH field="gamma" label="Gamma" onSort={handleSort} sortField={sortField} sortDir={sortDir} />
+                                <TH field="theta" label="Theta" onSort={handleSort} sortField={sortField} sortDir={sortDir} />
+                                <TH field="vega" label="Vega" onSort={handleSort} sortField={sortField} sortDir={sortDir} />
+                                <TH field="rho" label="Rho" onSort={handleSort} sortField={sortField} sortDir={sortDir} />
+                            </>}
                             <TH field="tradeTime" label="Last Trade" onSort={handleSort} sortField={sortField} sortDir={sortDir} />
                         </tr>
                     </thead>
                     <tbody>
                         {filtered.map((o, i) => (
-                            <OptionRow key={`${o.symbol}-${o.strikePrice}-${o.expirationDate}-${o.putCall}-${i}`} option={o} />
+                            <OptionRow key={`${o.symbol}-${o.strikePrice}-${o.expirationDate}-${o.putCall}-${i}`}
+                                option={o} showGreeks={query.showGreeks} />
                         ))}
                     </tbody>
                 </table>
@@ -208,7 +361,7 @@ function UnusualOptionsPage() {
 
             {/* Footer */}
             <div un-p="2" un-bg="slate-50" un-rounded="xl" un-text="slate-400 xs">
-                📊 Data sourced from Barchart.com • Unusual activity = Vol/OI ratio ≥ 1.24 •
+                📊 Data sourced from Barchart.com • Unusual activity = Vol/OI ratio ≥ {query.minVolOI} •
                 Bullish sentiment in green, Bearish in red • Not financial advice
             </div>
         </div>
@@ -246,7 +399,7 @@ function TH({ field, label, onSort, sortField, sortDir, align = 'right' }: {
     )
 }
 
-function OptionRow({ option: o }: { option: UnusualOption }) {
+function OptionRow({ option: o, showGreeks }: { option: UnusualOption; showGreeks: boolean }) {
     const isCall = o.putCall === 'Call'
     const highRatio = o.volumeOpenInterestRatio >= 5
     const moneyColor = o.moneyness >= 0 ? 'emerald-600' : 'red-500'
@@ -305,6 +458,14 @@ function OptionRow({ option: o }: { option: UnusualOption }) {
                     {o.delta >= 0 ? '+' : ''}{o.delta.toFixed(4)}
                 </span>
             </td>
+            {showGreeks && <>
+                <td un-p="x-2 y-2" un-text="right" un-font="mono">{(o.gamma ?? 0).toFixed(4)}</td>
+                <td un-p="x-2 y-2" un-text="right" un-font="mono">
+                    <span un-text-color="red-500">{(o.theta ?? 0).toFixed(4)}</span>
+                </td>
+                <td un-p="x-2 y-2" un-text="right" un-font="mono">{(o.vega ?? 0).toFixed(4)}</td>
+                <td un-p="x-2 y-2" un-text="right" un-font="mono">{(o.rho ?? 0).toFixed(4)}</td>
+            </>}
             <td un-p="x-2 y-2" un-text="right xs slate-500">
                 {o.tradeTime}
             </td>
@@ -314,4 +475,4 @@ function OptionRow({ option: o }: { option: UnusualOption }) {
 
 // UnoCSS safelist trick to ensure dynamic classes are generated
 export const UnoTrick = <div un-text="emerald-600 emerald-700 red-500 red-700 amber-600 orange-500 blue-700"
-    un-bg="emerald-50/60 emerald-600 red-50/60 red-500 emerald-100 red-100 blue-50 hover:slate-100 hover:slate-50/80 hover:blue-50 hover:blue-100" />
+    un-bg="emerald-50/60 emerald-600 red-50/60 red-500 emerald-100 red-100 blue-50 blue-600 slate-300 hover:slate-100 hover:slate-50/80 hover:blue-50 hover:blue-100" />
