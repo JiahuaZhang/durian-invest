@@ -1,3 +1,15 @@
+alpaca: Fidelity / Robinhood, option chains stats.
+other unusual option data flow?
+https://marketchameleon.com/Reports/UnusualOptionVolumeReport
+https://www.insiderfinance.io/flow
+other platform api:
+webull: https://developer.webull.com/apis/docs/market-data-api/data-streaming-api/
+moomoo: https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-warrant.html
+ibkr: https://www.interactivebrokers.com/campus/ibkr-api-page/web-api-trading/#introduction-0
+other services / tools, how to scrawl these data
+
+Poly Market / Kalshi, prediction market trace? API exploration.
+
 volume moving average
 money flow index
 
