@@ -1,7 +1,7 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { Info, LayoutDashboard } from 'lucide-react'
-import { PhysicalTFFChart, type RawPhysicalData } from '../components/PhysicalTFFChart'
-import { TFFChart, type RawTFFData } from '../components/TFFChart'
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { Info, LayoutDashboard } from 'lucide-react';
+import { PhysicalTFFChart, type RawPhysicalData } from '../components/PhysicalTFFChart';
+import { TFFChart, type RawTFFData } from '../components/TFFChart';
 import {
     CFTC_ENDPOINTS,
     DEFAULT_PRODUCT,
@@ -10,44 +10,46 @@ import {
     getProductsByType,
     REPORT_TYPES,
     type ReportType,
-} from '../config/cot-products'
+} from '../config/cot-products';
 
 type SearchParams = {
-    type: ReportType
-    product: string
-}
+    type: ReportType;
+    product: string;
+};
 
 export const Route = createFileRoute('/cot')({
     validateSearch: (search: Record<string, unknown>): SearchParams => {
-        const type: ReportType = search.type === 'tff' ? 'tff' : 'disaggregated'
-        const productKey = String(search.product ?? '')
-        const product = getProduct(productKey, type) ? productKey : DEFAULT_PRODUCT[type]
-        return { type, product }
+        const type: ReportType = search.type === 'tff' ? 'tff' : 'disaggregated';
+        const productKey = String(search.product ?? '');
+        const product = getProduct(productKey, type) ? productKey : DEFAULT_PRODUCT[type];
+        return { type, product };
     },
     loaderDeps: ({ search }) => ({ type: search.type, product: search.product }),
     loader: async ({ deps: { type, product } }) => {
-        const config = getProduct(product, type)
-        if (!config) throw new Error(`Unknown product: ${product}`)
-        const url = `${CFTC_ENDPOINTS[type]}?cftc_contract_market_code=${encodeURIComponent(config.contractCode)}&$order=report_date_as_yyyy_mm_dd ASC&$limit=520`
-        const res = await fetch(url)
-        if (!res.ok) throw new Error(`Failed to fetch COT data for ${config.label}`)
-        return { data: await res.json() }
+        const config = getProduct(product, type);
+        if (!config) throw new Error(`Unknown product: ${product}`);
+        const url = `${CFTC_ENDPOINTS[type]}?cftc_contract_market_code=${encodeURIComponent(config.contractCode)}&$order=report_date_as_yyyy_mm_dd DESC&$limit=520`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch COT data for ${config.label}`);
+        const data = await res.json();
+        data.reverse();
+        return { data };
     },
     component: CotIndexPage,
-})
+});
 
 function CotIndexPage() {
-    const navigate = useNavigate({ from: '/cot' })
-    const { type, product } = Route.useSearch()
-    const { data } = Route.useLoaderData()
+    const navigate = useNavigate({ from: '/cot' });
+    const { type, product } = Route.useSearch();
+    const { data } = Route.useLoaderData();
 
     const handleTypeChange = (newType: ReportType) => {
-        navigate({ search: { type: newType, product: DEFAULT_PRODUCT[newType] } })
-    }
+        navigate({ search: { type: newType, product: DEFAULT_PRODUCT[newType] } });
+    };
 
     const handleProductChange = (newProduct: string) => {
-        navigate({ search: { type, product: newProduct } })
-    }
+        navigate({ search: { type, product: newProduct } });
+    };
 
     return (
         <div un-flex="~ col">
@@ -109,7 +111,7 @@ function CotIndexPage() {
             </div>
 
         </div>
-    )
+    );
 }
 
 function DisaggregatedGuide() {
@@ -129,7 +131,7 @@ function DisaggregatedGuide() {
                 <p un-mt="2" un-font="semibold">Key signal: Managed Money at multi-year extremes + Producers reducing shorts = strongest bullish setup.</p>
             </div>
         </div>
-    )
+    );
 }
 
 function TFFGuide() {
@@ -147,5 +149,5 @@ function TFFGuide() {
             </ul>
             <p un-mt="2" un-font="semibold">Key signal: Leveraged Funds at multi-year extremes = trend exhaustion. AM/LF divergence = structural vs. speculative imbalance.</p>
         </div>
-    )
+    );
 }
