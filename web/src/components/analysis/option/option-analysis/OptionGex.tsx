@@ -136,15 +136,17 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
             )
         }
 
-        // Spot price vertical line (yellow)
-        if (safeSpotPrice != null) {
+        if (safeSpotPrice != null && gexData.length > 0) {
+            const nearestStrike = gexData.reduce((prev, curr) =>
+                Math.abs(curr.strike - safeSpotPrice) < Math.abs(prev.strike - safeSpotPrice) ? curr : prev
+            ).strike
             const spotSeries = chart.addSeries(LineSeries, {
                 visible: false,
                 autoscaleInfoProvider: () => null,
             })
-            spotSeries.setData([{ time: safeSpotPrice as Time, value: 0 }])
+            spotSeries.setData([{ time: nearestStrike as Time, value: 0 }])
 
-            const vertLine = new VertLine(chart, spotSeries, safeSpotPrice as Time, {
+            const vertLine = new VertLine(chart, spotSeries, nearestStrike as Time, {
                 color: SPOT_COLOR,
                 width: 2,
             })

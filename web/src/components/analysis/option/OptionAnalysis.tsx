@@ -264,7 +264,7 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
 
             {!loading && !error && strikes.length > 0 && (
                 <>
-                    <OptionBarChart strikes={strikes} mode={mode} metricView={metricView} />
+                    <OptionBarChart strikes={strikes} mode={mode} metricView={metricView} spotPrice={quote?.regularMarketPrice} />
 
                     <div un-grid="~" un-text="sm slate-600">
                         {(metricView === 'openInterest' || metricView === 'both') && (
