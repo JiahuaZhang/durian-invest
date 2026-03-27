@@ -15,6 +15,7 @@ import { Route as HistoryRouteImport } from './routes/history'
 import { Route as CotRouteImport } from './routes/cot'
 import { Route as AnalysisRouteImport } from './routes/analysis'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as OptionTastytradeRouteImport } from './routes/option.tastytrade'
 import { Route as OptionAlpacaRouteImport } from './routes/option.alpaca'
 import { Route as DomBtcRouteImport } from './routes/dom.btc'
 import { Route as OptionUnusualBarchartRouteImport } from './routes/option.unusual.barchart'
@@ -49,6 +50,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OptionTastytradeRoute = OptionTastytradeRouteImport.update({
+  id: '/option/tastytrade',
+  path: '/option/tastytrade',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OptionAlpacaRoute = OptionAlpacaRouteImport.update({
   id: '/option/alpaca',
   path: '/option/alpaca',
@@ -74,6 +80,7 @@ export interface FileRoutesByFullPath {
   '/overview': typeof OverviewRoute
   '/dom/btc': typeof DomBtcRoute
   '/option/alpaca': typeof OptionAlpacaRoute
+  '/option/tastytrade': typeof OptionTastytradeRoute
   '/option/unusual/barchart': typeof OptionUnusualBarchartRoute
 }
 export interface FileRoutesByTo {
@@ -85,6 +92,7 @@ export interface FileRoutesByTo {
   '/overview': typeof OverviewRoute
   '/dom/btc': typeof DomBtcRoute
   '/option/alpaca': typeof OptionAlpacaRoute
+  '/option/tastytrade': typeof OptionTastytradeRoute
   '/option/unusual/barchart': typeof OptionUnusualBarchartRoute
 }
 export interface FileRoutesById {
@@ -97,6 +105,7 @@ export interface FileRoutesById {
   '/overview': typeof OverviewRoute
   '/dom/btc': typeof DomBtcRoute
   '/option/alpaca': typeof OptionAlpacaRoute
+  '/option/tastytrade': typeof OptionTastytradeRoute
   '/option/unusual/barchart': typeof OptionUnusualBarchartRoute
 }
 export interface FileRouteTypes {
@@ -110,6 +119,7 @@ export interface FileRouteTypes {
     | '/overview'
     | '/dom/btc'
     | '/option/alpaca'
+    | '/option/tastytrade'
     | '/option/unusual/barchart'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -121,6 +131,7 @@ export interface FileRouteTypes {
     | '/overview'
     | '/dom/btc'
     | '/option/alpaca'
+    | '/option/tastytrade'
     | '/option/unusual/barchart'
   id:
     | '__root__'
@@ -132,6 +143,7 @@ export interface FileRouteTypes {
     | '/overview'
     | '/dom/btc'
     | '/option/alpaca'
+    | '/option/tastytrade'
     | '/option/unusual/barchart'
   fileRoutesById: FileRoutesById
 }
@@ -144,6 +156,7 @@ export interface RootRouteChildren {
   OverviewRoute: typeof OverviewRoute
   DomBtcRoute: typeof DomBtcRoute
   OptionAlpacaRoute: typeof OptionAlpacaRoute
+  OptionTastytradeRoute: typeof OptionTastytradeRoute
   OptionUnusualBarchartRoute: typeof OptionUnusualBarchartRoute
 }
 
@@ -191,6 +204,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/option/tastytrade': {
+      id: '/option/tastytrade'
+      path: '/option/tastytrade'
+      fullPath: '/option/tastytrade'
+      preLoaderRoute: typeof OptionTastytradeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/option/alpaca': {
       id: '/option/alpaca'
       path: '/option/alpaca'
@@ -224,6 +244,7 @@ const rootRouteChildren: RootRouteChildren = {
   OverviewRoute: OverviewRoute,
   DomBtcRoute: DomBtcRoute,
   OptionAlpacaRoute: OptionAlpacaRoute,
+  OptionTastytradeRoute: OptionTastytradeRoute,
   OptionUnusualBarchartRoute: OptionUnusualBarchartRoute,
 }
 export const routeTree = rootRouteImport

@@ -2,6 +2,7 @@ import { Link, useLocation } from '@tanstack/react-router'
 import {
     BarChart3,
     ChevronLeft,
+    Coins,
     History,
     Home,
     LayoutGrid,
@@ -29,6 +30,7 @@ export function Sidebar() {
         { icon: History, label: 'History', to: '/history' },
         { icon: Zap, label: 'Unusual Options', to: '/option/unusual/barchart' },
         { icon: TrendingUp, label: 'Option Chain', to: '/option/alpaca' },
+        { icon: Coins, label: 'Gold Options', to: '/option/tastytrade' },
     ]
 
     return (
