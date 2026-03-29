@@ -31,6 +31,7 @@ export function Sidebar() {
         { icon: Zap, label: 'Unusual Options', to: '/option/unusual/barchart' },
         { icon: TrendingUp, label: 'Option Chain', to: '/option/alpaca' },
         { icon: Coins, label: 'Gold Options', to: '/option/tastytrade' },
+        { icon: PieChart, label: 'CME Options', to: '/option/cme' },
     ]
 
     return (

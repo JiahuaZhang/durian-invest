@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { EconomicCalendar, MarketOverview, MarketOverviewProps, MiniChart, StockHeatmap, StockMarket } from 'react-ts-tradingview-widgets';
+import { EconomicCalendar, MarketOverview, MarketOverviewProps, StockHeatmap, StockMarket } from 'react-ts-tradingview-widgets';
 
 export const Route = createFileRoute('/overview')({
   component: Overview
@@ -41,6 +41,17 @@ const commoditiesTabs = [
     originalTitle: "Commodities"
   }
 ];
+
+const indexTabs = [
+  {
+    title: 'Index',
+    symbols: [
+      { s: 'VIX', d: 'Volatility Index' },
+      { s: 'GVZCLS', d: 'Gold Volatility Index' },
+    ],
+    originalTitle: 'Index'
+  }
+]
 
 const bondsTabs = [
   {
@@ -85,7 +96,7 @@ function Overview() {
       </div>
 
       <div un-flex="1" un-min-w="xs" un-max-w='sm' un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
-        <MiniChart {...commonProps} symbol="CAPITALCOM:VIX" />
+        <MarketOverview {...commonProps} tabs={indexTabs} />
       </div>
 
       <div un-flex="1" un-min-w="xs" un-max-w='sm' un-h="150" un-rounded="xl" un-overflow="hidden" un-border="~ slate-200" un-shadow="sm" un-bg="white">
