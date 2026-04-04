@@ -1,3 +1,52 @@
+gold:
+cme group: https://www.cmegroup.com/markets/metals/precious/gold.volume.options.html#optionProductId=10626
+quikstrike: https://cmegroup-sso.quikstrike.net/User/QuikStrikeView.aspx?pid=40&pf=6
+more tools: https://www.cmegroup.com/trading/equity-index/us-index/equity-index-dividend-futures.html
+
+1. 日内动量策略（Intraday Momentum）— ORB的"学术亲兄弟"
+这是Gao等人在报告里验证的那个策略的直接应用版：看前半小时方向，只在最后半小时交易。
+规则极简：如果开盘半小时市场上涨，在最后半小时做多；如果下跌，最后半小时做空。收盘平仓。 Alpha Architect
+这个策略年化收益约6.67%，夏普比率远超买入持有。 Quantified Strategies而且在高成交量日表现更好——低量日年化仅1.67%，中量日6.46%，高量日进一步提升。 Mql5
+优点：每天只交易一次、只持仓30分钟、风险敞口极低。如果你不想盯盘，这比ORB更省心。
+和ORB的区别：ORB在突破时入场（通常上午），这个策略只在尾盘入场。两者可以互补——上午用ORB，下午用日内动量。
+
+2. VWAP趋势跟踪策略 — "傻瓜版"日内趋势
+Zarattini和Aziz（2023）发表在Swiss Finance Institute的论文提出了一个极简VWAP策略：价格在VWAP之上做多，跌破VWAP做空。用QQQ回测2018–2023年，$25,000初始资金增长到$192,656，收益671%，最大回撤仅9.4%，夏普比率2.1。 SSRN而同期买入持有QQQ的收益是126%，最大回撤37%。
+规则就一句话：价格 > VWAP = 做多，价格 < VWAP = 做空。 每天收盘平仓。
+优点：几乎不需要判断，纯机械执行。VWAP是机构交易员最常用的基准线，所以它天然具备"自我实现"的特性。
+缺点：震荡日会反复被VWAP来回打脸。需要配合趋势过滤器（比如只在ATR较大的日子交易）。
+
+3. 0DTE期权 + ORB — 你作为期权交易者最该关注的
+既然你本身就做期权，Option Alpha的回测显示，将ORB与0DTE信用价差结合，60分钟ORB的胜率达89.4%，利润因子1.44，回报远超15分钟和30分钟版本。 Option Alpha
+具体操作：开盘区间突破上沿时卖出看跌价差（short put spread），突破下沿时卖出看涨价差（short call spread），每天最多一单。
+
+4. 5分钟ORB（改良版）— 最新回测数据最强的变体
+Options Cafe的详细回测（2024–2026年初）发现，5分钟ORB几乎在所有维度上都优于15分钟版本——收益翻倍、最大回撤减半。 Options Cafe而且该策略只在周一、周三、周五交易，因为周二和周四增加了200多笔交易但仅贡献约$1,300，稀释了优势。 Options Cafe
+这和之前报告里"周一波动率高、周五实现波动率高"的发现完美吻合——周一和周五是ORB最有效的日子。
+
+5. Gap Fill（缺口回补）策略 — ORB的"反向版"
+这个策略和ORB逻辑相反：当股票跳空高开/低开时，赌它会回补缺口（回到前一天收盘价）。Edgeful的数据显示SPY缺口回补率在特定条件下超过70%。
+规则：开盘跳空 → 等待价格开始回补方向 → 入场 → 目标位设在前一天收盘价。
+和ORB的关系：ORB是顺势策略（跟着突破走），Gap Fill是均值回归策略（赌价格回来）。两者在不同市况下表现互补——趋势日ORB赢，震荡日Gap Fill赢。
+
+我的建议
+如果让我给你排个优先级：
+首选：5分钟ORB + 0DTE期权组合。你已经做期权了，直接在现有框架上叠加，而且只在周一/周三/周五交易，降低过度交易的风险。
+次选：VWAP趋势跟踪。规则最简单、学术背书最强、心理负担最小。适合你作为"系统二"策略备用。
+辅助：日内动量策略作为尾盘加餐——如果上午ORB已经给了方向，下午3:30再做一笔确认性交易。
+这些策略的共同特点是：规则明确、可回测、每天最多1–2笔交易。比起复杂的技术分析体系，它们胜在纪律性和可执行性。
+
+cot data update:
+both future & option:
+https://publicreporting.cftc.gov/resource/kh3c-gbw2.json?cftc_contract_market_code=088691&$order=report_date_as_yyyy_mm_dd%20ASC&$limit=520
+future only:
+https://publicreporting.cftc.gov/resource/72hh-3qpy.json?cftc_contract_market_code=088691&$order=report_date_as_yyyy_mm_dd%20ASC&$limit=520
+Fetch Dataset A (Futures Only): Use your original URL (72hh-3qpy).
+Fetch Dataset B (Combined): Use the new URL above (kh3c-gbw2).
+Join the Data: Merge the two JSON responses on the exact same report_date_as_yyyy_mm_dd.
+Do the Math: For every single column (Longs, Shorts, Spreads) inside Producer, Swap Dealer, Managed Money, etc., simply subtract Dataset A from Dataset B.
+update /cot
+
 alpaca: Fidelity / Robinhood, option chains stats.
 other unusual option data flow?
 https://marketchameleon.com/Reports/UnusualOptionVolumeReport
@@ -7,6 +56,10 @@ webull: https://developer.webull.com/apis/docs/market-data-api/data-streaming-ap
 moomoo: https://openapi.moomoo.com/moomoo-api-doc/en/quote/get-warrant.html
 ibkr: https://www.interactivebrokers.com/campus/ibkr-api-page/web-api-trading/#introduction-0
 other services / tools, how to scrawl these data
+
+Gold:
+https://www.cmegroup.com/markets/metals/precious/gold.quotes.html
+contango / backwardation 正向市场/逆向市场
 
 Poly Market / Kalshi, prediction market trace? API exploration.
 
