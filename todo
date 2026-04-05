@@ -47,6 +47,11 @@ Join the Data: Merge the two JSON responses on the exact same report_date_as_yyy
 Do the Math: For every single column (Longs, Shorts, Spreads) inside Producer, Swap Dealer, Managed Money, etc., simply subtract Dataset A from Dataset B.
 update /cot
 
+orb strategy bot:
+yaml config file, multiple orb strategies, project re-construct.
+need furthur consideration, when using same paper account, need more deliberate code update.
+logging, keep track of same bot, same transaction (open & close), using id?
+
 alpaca: Fidelity / Robinhood, option chains stats.
 other unusual option data flow?
 https://marketchameleon.com/Reports/UnusualOptionVolumeReport

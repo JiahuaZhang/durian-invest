@@ -1,20 +1,20 @@
 # fly.toml
 # Configuration for Durian Invest Trading Bot
 
-app = "durian-invest"
+app = "botvest"
 primary_region = "iad"
 
 [build]
 
 [env]
   # Configure which strategies to run (comma-separated)
-  # Options: sma, gemini-portfolio
+  # Options: sma, gemini-portfolio, orb
   # Examples:
-  #   STRATEGIES = "sma"  # SMA only
+  #   STRATEGIES = "orb"  # ORB only
   #   STRATEGIES = "gemini-portfolio"  # AI portfolio only
-  #   STRATEGIES = "sma,gemini-portfolio"  # Both strategies
+  #   STRATEGIES = "orb,gemini-portfolio"  # Both strategies
   # Override via: fly secrets set STRATEGIES=...
-  STRATEGIES = "gemini-portfolio"
+  STRATEGIES = "orb"
 
 # App scaling configuration
 [http_service]

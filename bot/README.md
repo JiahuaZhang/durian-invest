@@ -1,10 +1,10 @@
 # Fly.io setup
 
 ```shell
-fly apps create durian-invest
+fly apps create botvest
 
 automatically selected personal organization: Jiahua Zhang
-New app created: durian-invest
+New app created: botvest
 ```
 
 ```shell
