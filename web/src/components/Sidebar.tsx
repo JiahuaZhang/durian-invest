@@ -1,6 +1,7 @@
 import { Link, useLocation } from '@tanstack/react-router'
 import {
     BarChart3,
+    Bot,
     ChevronLeft,
     Coins,
     History,
@@ -32,6 +33,7 @@ export function Sidebar() {
         { icon: TrendingUp, label: 'Option Chain', to: '/option/alpaca' },
         { icon: Coins, label: 'Gold Options', to: '/option/tastytrade' },
         { icon: PieChart, label: 'CME Options', to: '/option/cme' },
+        { icon: Bot, label: 'ORB Bot', to: '/bot/orb' },
     ]
 
     return (

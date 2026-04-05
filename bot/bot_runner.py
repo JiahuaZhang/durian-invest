@@ -1,5 +1,6 @@
 import os
 import sys
+import signal
 import asyncio
 import logging
 from typing import List

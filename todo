@@ -1,7 +1,14 @@
+option? by price level; by date. aggregate (yahoo finance)
+furthur exploration, get implied volatility, delta etc greeks.
+stock, more than per day interval, configurable, per hour, per 15 min, per 5 min
+
 gold:
 cme group: https://www.cmegroup.com/markets/metals/precious/gold.volume.options.html#optionProductId=10626
 quikstrike: https://cmegroup-sso.quikstrike.net/User/QuikStrikeView.aspx?pid=40&pf=6
 more tools: https://www.cmegroup.com/trading/equity-index/us-index/equity-index-dividend-futures.html
+
+Early Birds Get the Vol: Morning Volatility Uncertainty and Variance Risk Premium
+VVIX morning (10: est) 75 percentile
 
 1. 日内动量策略（Intraday Momentum）— ORB的"学术亲兄弟"
 这是Gao等人在报告里验证的那个策略的直接应用版：看前半小时方向，只在最后半小时交易。

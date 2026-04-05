@@ -19,6 +19,7 @@ import { Route as OptionTastytradeRouteImport } from './routes/option.tastytrade
 import { Route as OptionCmeRouteImport } from './routes/option.cme'
 import { Route as OptionAlpacaRouteImport } from './routes/option.alpaca'
 import { Route as DomBtcRouteImport } from './routes/dom.btc'
+import { Route as BotOrbRouteImport } from './routes/bot.orb'
 import { Route as OptionUnusualBarchartRouteImport } from './routes/option.unusual.barchart'
 
 const OverviewRoute = OverviewRouteImport.update({
@@ -71,6 +72,11 @@ const DomBtcRoute = DomBtcRouteImport.update({
   path: '/dom/btc',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BotOrbRoute = BotOrbRouteImport.update({
+  id: '/bot/orb',
+  path: '/bot/orb',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OptionUnusualBarchartRoute = OptionUnusualBarchartRouteImport.update({
   id: '/option/unusual/barchart',
   path: '/option/unusual/barchart',
@@ -84,6 +90,7 @@ export interface FileRoutesByFullPath {
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
+  '/bot/orb': typeof BotOrbRoute
   '/dom/btc': typeof DomBtcRoute
   '/option/alpaca': typeof OptionAlpacaRoute
   '/option/cme': typeof OptionCmeRoute
@@ -97,6 +104,7 @@ export interface FileRoutesByTo {
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
+  '/bot/orb': typeof BotOrbRoute
   '/dom/btc': typeof DomBtcRoute
   '/option/alpaca': typeof OptionAlpacaRoute
   '/option/cme': typeof OptionCmeRoute
@@ -111,6 +119,7 @@ export interface FileRoutesById {
   '/history': typeof HistoryRoute
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
+  '/bot/orb': typeof BotOrbRoute
   '/dom/btc': typeof DomBtcRoute
   '/option/alpaca': typeof OptionAlpacaRoute
   '/option/cme': typeof OptionCmeRoute
@@ -126,6 +135,7 @@ export interface FileRouteTypes {
     | '/history'
     | '/news'
     | '/overview'
+    | '/bot/orb'
     | '/dom/btc'
     | '/option/alpaca'
     | '/option/cme'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
     | '/history'
     | '/news'
     | '/overview'
+    | '/bot/orb'
     | '/dom/btc'
     | '/option/alpaca'
     | '/option/cme'
@@ -152,6 +163,7 @@ export interface FileRouteTypes {
     | '/history'
     | '/news'
     | '/overview'
+    | '/bot/orb'
     | '/dom/btc'
     | '/option/alpaca'
     | '/option/cme'
@@ -166,6 +178,7 @@ export interface RootRouteChildren {
   HistoryRoute: typeof HistoryRoute
   NewsRoute: typeof NewsRoute
   OverviewRoute: typeof OverviewRoute
+  BotOrbRoute: typeof BotOrbRoute
   DomBtcRoute: typeof DomBtcRoute
   OptionAlpacaRoute: typeof OptionAlpacaRoute
   OptionCmeRoute: typeof OptionCmeRoute
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DomBtcRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bot/orb': {
+      id: '/bot/orb'
+      path: '/bot/orb'
+      fullPath: '/bot/orb'
+      preLoaderRoute: typeof BotOrbRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/option/unusual/barchart': {
       id: '/option/unusual/barchart'
       path: '/option/unusual/barchart'
@@ -262,6 +282,7 @@ const rootRouteChildren: RootRouteChildren = {
   HistoryRoute: HistoryRoute,
   NewsRoute: NewsRoute,
   OverviewRoute: OverviewRoute,
+  BotOrbRoute: BotOrbRoute,
   DomBtcRoute: DomBtcRoute,
   OptionAlpacaRoute: OptionAlpacaRoute,
   OptionCmeRoute: OptionCmeRoute,
