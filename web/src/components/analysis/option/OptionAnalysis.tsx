@@ -1,4 +1,4 @@
-import { getOptionOpenInterestData, type YahooOptionChainResult } from '@/utils/yahoo'
+import { getOptionOpenInterestData, type YahooOptionChainResult, type MaxPainResult } from '@/utils/yahoo'
 import { RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { CHART_MODES, METRIC_VIEWS } from './option-analysis/constants'
@@ -6,12 +6,10 @@ import { OptionBarChart } from './option-analysis/OptionBarChart'
 import { OptionChainTable } from './option-analysis/OptionChainTable'
 import { OptionGex } from './option-analysis/OptionGex'
 import { OptionVolatility } from './option-analysis/OptionVolatility'
-import type { ChartMode, MaxPainResult, MetricView } from './option-analysis/types'
+import type { ChartMode, MetricView } from './option-analysis/types'
 import {
     buildCacheKey,
-    calculateMaxPain,
     clearSymbolCache,
-    deriveStrikeMetrics,
     findChainForDate,
     formatCompactNumber,
     formatExpirationDate,
@@ -29,10 +27,10 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
     const [chainResult, setChainResult] = useState<YahooOptionChainResult | null>(null)
     const [error, setError] = useState<string | null>(null)
     const [loading, setLoading] = useState(false)
+    const [maxPainCache, setMaxPainCache] = useState<Map<number, MaxPainResult>>(new Map())
 
     const normalizedSymbol = symbol.trim().toUpperCase()
     const cacheRef = useRef<Map<string, YahooOptionChainResult>>(new Map())
-    const [maxPainCache, setMaxPainCache] = useState<Map<number, MaxPainResult>>(new Map())
     const requestIdRef = useRef(0)
 
     async function loadOptionChain(date?: number, forceRefresh = false): Promise<YahooOptionChainResult | null> {
@@ -107,7 +105,7 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
         return findChainForDate(chainResult, selectedDate)
     })()
 
-    const strikes = deriveStrikeMetrics(activeChain)
+    const strikes = activeChain?.strikeMetrics ?? []
 
     const totals = strikes.reduce(
         (acc, strike) => {
@@ -120,19 +118,10 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
         { callOpenInterest: 0, putOpenInterest: 0, callVolume: 0, putVolume: 0 },
     )
 
+    // Max pain is pre-computed on the backend — just cache the reference per expiration date
     useEffect(() => {
-        if (!activeChain) return
-
-        setMaxPainCache(prev => {
-            if (prev.has(activeChain.expirationDate)) {
-                return prev
-            }
-            const maxPain = calculateMaxPain(activeChain)
-            if (maxPain) {
-                return new Map(prev).set(activeChain.expirationDate, maxPain)
-            }
-            return prev
-        })
+        if (!activeChain?.maxPain || maxPainCache.has(activeChain.expirationDate)) return
+        setMaxPainCache(prev => new Map(prev).set(activeChain.expirationDate, activeChain.maxPain!))
     }, [activeChain])
 
     const quote = chainResult?.quote

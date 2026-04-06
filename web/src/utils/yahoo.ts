@@ -18,11 +18,46 @@ export type YahooOption = {
     inTheMoney: boolean
 }
 
+export type StrikeMetrics = {
+    strike: number
+    callOpenInterest: number
+    putOpenInterest: number
+    callVolume: number
+    putVolume: number
+    totalOpenInterest: number
+    totalVolume: number
+}
+
+export type MaxPainResult = {
+    strike: number
+    callValue: number
+    putValue: number
+    totalValue: number
+}
+
+export type GexPoint = {
+    strike: number
+    callGex: number
+    putGex: number
+    totalGex: number
+}
+
+export type VolPoint = {
+    strike: number
+    iv: number
+}
+
 export type YahooOptionChainEntry = {
     expirationDate: number
     hasMiniOptions: boolean
     calls: YahooOption[]
     puts: YahooOption[]
+    strikeMetrics: StrikeMetrics[]
+    maxPain: MaxPainResult | null
+    gexByOI: GexPoint[]
+    gexByVolume: GexPoint[]
+    callVolCurve: VolPoint[]
+    putVolCurve: VolPoint[]
 }
 
 export type YahooOptionChainResult = {
@@ -47,9 +82,12 @@ export type YahooOptionChainResult = {
     options: YahooOptionChainEntry[]
 }
 
+// Raw types for deserializing the Yahoo Finance API response before enrichment
+type RawChainEntry = Omit<YahooOptionChainEntry, 'strikeMetrics' | 'maxPain' | 'gexByOI' | 'gexByVolume' | 'callVolCurve' | 'putVolCurve'>
+type RawResult = Omit<YahooOptionChainResult, 'options'> & { options: RawChainEntry[] }
 type YahooResponse = {
     optionChain: {
-        result: YahooOptionChainResult[]
+        result: RawResult[]
         error: unknown
     }
 }
@@ -123,6 +161,147 @@ function buildOptionChainUrl(yahooSymbol: string, crumb: string | null, date?: n
     return `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(yahooSymbol)}${query ? `?${query}` : ''}`
 }
 
+// ============================================================================
+// Backend computations — run once at fetch time, stored on the chain entry
+// ============================================================================
+
+function computeStrikeMetrics(calls: YahooOption[], puts: YahooOption[]): StrikeMetrics[] {
+    const strikeMap = new Map<number, StrikeMetrics>()
+
+    const upsert = (strike: number): StrikeMetrics => {
+        const existing = strikeMap.get(strike)
+        if (existing) return existing
+        const next: StrikeMetrics = { strike, callOpenInterest: 0, putOpenInterest: 0, callVolume: 0, putVolume: 0, totalOpenInterest: 0, totalVolume: 0 }
+        strikeMap.set(strike, next)
+        return next
+    }
+
+    calls.forEach(o => {
+        const s = upsert(o.strike)
+        s.callOpenInterest += Math.max(0, o.openInterest ?? 0)
+        s.callVolume += Math.max(0, o.volume ?? 0)
+        s.totalOpenInterest = s.callOpenInterest + s.putOpenInterest
+        s.totalVolume = s.callVolume + s.putVolume
+    })
+
+    puts.forEach(o => {
+        const s = upsert(o.strike)
+        s.putOpenInterest += Math.max(0, o.openInterest ?? 0)
+        s.putVolume += Math.max(0, o.volume ?? 0)
+        s.totalOpenInterest = s.callOpenInterest + s.putOpenInterest
+        s.totalVolume = s.callVolume + s.putVolume
+    })
+
+    return Array.from(strikeMap.values())
+        .filter(s => s.totalOpenInterest > 0 || s.totalVolume > 0)
+        .sort((a, b) => a.strike - b.strike)
+}
+
+function aggregateOI(options: YahooOption[]): Map<number, number> {
+    const map = new Map<number, number>()
+    options.forEach(o => {
+        if (!Number.isFinite(o.strike)) return
+        const oi = Math.max(0, o.openInterest ?? 0)
+        if (oi <= 0) return
+        map.set(o.strike, (map.get(o.strike) ?? 0) + oi)
+    })
+    return map
+}
+
+function computeMaxPain(calls: YahooOption[], puts: YahooOption[]): MaxPainResult | null {
+    const callBuckets = aggregateOI(calls)
+    const putBuckets = aggregateOI(puts)
+
+    const strikes = Array.from(new Set([...callBuckets.keys(), ...putBuckets.keys()])).sort((a, b) => a - b)
+    if (strikes.length === 0) return null
+
+    let best: MaxPainResult | null = null
+
+    for (const settlement of strikes) {
+        let callValue = 0
+        let putValue = 0
+
+        callBuckets.forEach((oi, strike) => {
+            if (oi > 0 && strike < settlement) callValue += (settlement - strike) * oi * 100
+        })
+        putBuckets.forEach((oi, strike) => {
+            if (oi > 0 && strike > settlement) putValue += (strike - settlement) * oi * 100
+        })
+
+        const total = callValue + putValue
+        if (!best || total < best.totalValue || (total === best.totalValue && settlement < best.strike)) {
+            best = { strike: settlement, callValue, putValue, totalValue: total }
+        }
+    }
+
+    return best
+}
+
+function computeGex(calls: YahooOption[], puts: YahooOption[], spotPrice: number, source: 'openInterest' | 'volume'): GexPoint[] {
+    const now = Date.now() / 1000
+    const strikeMap = new Map<number, { callGex: number; putGex: number }>()
+
+    const process = (option: YahooOption, isCall: boolean) => {
+        const weight = (source === 'volume' ? option.volume : option.openInterest) ?? 0
+        if (weight <= 0) return
+        const iv = option.impliedVolatility ?? 0
+        if (iv <= 0) return
+
+        const dt = new Date(option.expiration * 1000)
+        const isEDT = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', timeZoneName: 'short' }).format(dt).includes('EDT')
+        const utcMidnight = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()) / 1000
+        const preciseExpiration = utcMidnight + (16 + (isEDT ? 4 : 5)) * 3600
+
+        const T = (preciseExpiration - now) / (365 * 24 * 3600)
+        if (T <= 0) return
+
+        const d1 = (Math.log(spotPrice / option.strike) + (0.05 + 0.5 * iv * iv) * T) / (iv * Math.sqrt(T))
+        const nd1 = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1)
+        const gamma = nd1 / (spotPrice * iv * Math.sqrt(T))
+        const gexValue = gamma * weight * 100 * spotPrice * 0.01 * spotPrice
+
+        const existing = strikeMap.get(option.strike) ?? { callGex: 0, putGex: 0 }
+        if (isCall) existing.callGex += gexValue
+        else existing.putGex += gexValue
+        strikeMap.set(option.strike, existing)
+    }
+
+    calls.forEach(o => process(o, true))
+    puts.forEach(o => process(o, false))
+
+    return Array.from(strikeMap.entries())
+        .map(([strike, data]) => ({ strike, callGex: data.callGex, putGex: data.putGex, totalGex: data.callGex - data.putGex }))
+        .sort((a, b) => a.strike - b.strike)
+}
+
+function computeVolCurve(options: YahooOption[]): VolPoint[] {
+    const strikeMap = new Map<number, { sum: number; count: number }>()
+
+    options.forEach(o => {
+        if (!Number.isFinite(o.strike) || !Number.isFinite(o.impliedVolatility) || o.impliedVolatility <= 0) return
+        const existing = strikeMap.get(o.strike) ?? { sum: 0, count: 0 }
+        existing.sum += o.impliedVolatility * 100
+        existing.count += 1
+        strikeMap.set(o.strike, existing)
+    })
+
+    return Array.from(strikeMap.entries())
+        .map(([strike, e]) => ({ strike, iv: e.sum / e.count }))
+        .sort((a, b) => a.strike - b.strike)
+}
+
+function enrichChainEntry(raw: RawChainEntry, spotPrice: number): YahooOptionChainEntry {
+    return {
+        ...raw,
+        strikeMetrics: computeStrikeMetrics(raw.calls, raw.puts),
+        maxPain: computeMaxPain(raw.calls, raw.puts),
+        gexByOI: spotPrice > 0 ? computeGex(raw.calls, raw.puts, spotPrice, 'openInterest') : [],
+        gexByVolume: spotPrice > 0 ? computeGex(raw.calls, raw.puts, spotPrice, 'volume') : [],
+        callVolCurve: computeVolCurve(raw.calls),
+        putVolCurve: computeVolCurve(raw.puts),
+    }
+}
+
 async function fetchYahooOptionChain(symbol: string, date?: number): Promise<YahooOptionChainResult> {
     let { crumb, cookie } = await getSession()
 
@@ -152,11 +331,15 @@ async function fetchYahooOptionChain(symbol: string, date?: number): Promise<Yah
     }
 
     const data: YahooResponse = await response.json()
-    const result = data.optionChain.result[0]
+    const raw = data.optionChain.result[0]
 
-    if (!result) throw new Error(`No option data found for ${symbol.toUpperCase()}`)
+    if (!raw) throw new Error(`No option data found for ${symbol.toUpperCase()}`)
 
-    return result
+    const spotPrice = raw.quote.regularMarketPrice
+    return {
+        ...raw,
+        options: raw.options.map(entry => enrichChainEntry(entry, spotPrice)),
+    }
 }
 
 export const getOptionOpenInterestData = createServerFn({ method: 'GET' })

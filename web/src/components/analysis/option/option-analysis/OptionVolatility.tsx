@@ -1,4 +1,4 @@
-import type { YahooOption, YahooOptionChainEntry } from '@/utils/yahoo'
+import type { VolPoint, YahooOptionChainEntry } from '@/utils/yahoo'
 import { ColorType, createChart, LineSeries, LineStyle, type Time } from 'lightweight-charts'
 import { useEffect, useRef, useState } from 'react'
 import { VertLine } from '../../chart/VerticalLine'
@@ -12,11 +12,6 @@ type OptionVolatilityProps = {
 }
 
 type VolatilityView = 'both' | 'call' | 'put'
-
-type VolPoint = {
-    strike: number
-    iv: number
-}
 
 const VIEW_OPTIONS: Array<{ value: VolatilityView; label: string }> = [
     { value: 'both', label: 'Calls & Puts' },
@@ -33,17 +28,22 @@ export function OptionVolatility({ symbol, chain, spotPrice }: OptionVolatilityP
     const containerRef = useRef<HTMLDivElement>(null)
     const candleData = useCandleData()
 
-    const skewData = buildSkewData(chain)
+    const callVolCurve = chain?.callVolCurve ?? []
+    const putVolCurve = chain?.putVolCurve ?? []
     const historicalVolatility = calculateHistoricalVolatility(candleData, 30)
     const safeSpotPrice = typeof spotPrice === 'number' && Number.isFinite(spotPrice) ? spotPrice : null
 
-    const visibleCalls = (view === 'put' ? [] : skewData.callPoints)
-    const visiblePuts = (view === 'call' ? [] : skewData.putPoints)
-    const hasSkewData = skewData.callPoints.length > 0 || skewData.putPoints.length > 0
+    const visibleCalls = view === 'put' ? [] : callVolCurve
+    const visiblePuts = view === 'call' ? [] : putVolCurve
+    const hasSkewData = callVolCurve.length > 0 || putVolCurve.length > 0
     const hasVisibleData = visibleCalls.length > 0 || visiblePuts.length > 0
 
-    const atmCall = safeSpotPrice == null ? null : findNearestPoint(skewData.callPoints, safeSpotPrice)
-    const atmPut = safeSpotPrice == null ? null : findNearestPoint(skewData.putPoints, safeSpotPrice)
+    const allCurvePoints = [...callVolCurve, ...putVolCurve]
+    const minStrike = allCurvePoints.length > 0 ? Math.min(...allCurvePoints.map(p => p.strike)) : null
+    const maxStrike = allCurvePoints.length > 0 ? Math.max(...allCurvePoints.map(p => p.strike)) : null
+
+    const atmCall = safeSpotPrice == null ? null : findNearestPoint(callVolCurve, safeSpotPrice)
+    const atmPut = safeSpotPrice == null ? null : findNearestPoint(putVolCurve, safeSpotPrice)
 
     useEffect(() => {
         if (!containerRef.current || (visibleCalls.length === 0 && visiblePuts.length === 0)) return
@@ -108,14 +108,8 @@ export function OptionVolatility({ symbol, chain, spotPrice }: OptionVolatilityP
             )
         }
 
-        if (
-            historicalVolatility != null
-            && skewData.minStrike != null
-            && skewData.maxStrike != null
-        ) {
-            const rightStrike = skewData.maxStrike === skewData.minStrike
-                ? skewData.maxStrike + 0.01
-                : skewData.maxStrike
+        if (historicalVolatility != null && minStrike != null && maxStrike != null) {
+            const rightStrike = maxStrike === minStrike ? maxStrike + 0.01 : maxStrike
 
             const historicalSeries = chart.addSeries(LineSeries, {
                 color: HISTORICAL_COLOR,
@@ -127,13 +121,12 @@ export function OptionVolatility({ symbol, chain, spotPrice }: OptionVolatilityP
             })
 
             historicalSeries.setData([
-                { time: skewData.minStrike as Time, value: historicalVolatility },
+                { time: minStrike as Time, value: historicalVolatility },
                 { time: rightStrike as Time, value: historicalVolatility },
             ])
         }
 
         if (safeSpotPrice != null && hasVisibleData) {
-            // Use VertLine plugin attached to an invisible series to ensure it renders correctly
             const spotSeries = chart.addSeries(LineSeries, {
                 visible: false,
                 autoscaleInfoProvider: () => null,
@@ -161,7 +154,7 @@ export function OptionVolatility({ symbol, chain, spotPrice }: OptionVolatilityP
             window.removeEventListener('resize', resize)
             chart.remove()
         }
-    }, [historicalVolatility, skewData.maxStrike, skewData.minStrike, visibleCalls, visiblePuts, safeSpotPrice, hasVisibleData])
+    }, [historicalVolatility, minStrike, maxStrike, visibleCalls, visiblePuts, safeSpotPrice, hasVisibleData])
 
     if (!hasSkewData) {
         return (
@@ -249,55 +242,6 @@ export function OptionVolatility({ symbol, chain, spotPrice }: OptionVolatilityP
             </div>
         </section>
     )
-}
-
-function buildSkewData(chain: YahooOptionChainEntry | null): {
-    callPoints: VolPoint[]
-    putPoints: VolPoint[]
-    minStrike: number | null
-    maxStrike: number | null
-} {
-    const callPoints = buildVolatilityCurve(chain?.calls ?? [])
-    const putPoints = buildVolatilityCurve(chain?.puts ?? [])
-    const allPoints = [...callPoints, ...putPoints]
-
-    if (allPoints.length === 0) {
-        return {
-            callPoints,
-            putPoints,
-            minStrike: null,
-            maxStrike: null,
-        }
-    }
-
-    const strikes = allPoints.map(point => point.strike)
-    return {
-        callPoints,
-        putPoints,
-        minStrike: Math.min(...strikes),
-        maxStrike: Math.max(...strikes),
-    }
-}
-
-function buildVolatilityCurve(options: YahooOption[]): VolPoint[] {
-    const strikeMap = new Map<number, { sum: number; count: number }>()
-
-    options.forEach(option => {
-        if (!Number.isFinite(option.strike)) return
-        if (!Number.isFinite(option.impliedVolatility) || option.impliedVolatility <= 0) return
-
-        const existing = strikeMap.get(option.strike) ?? { sum: 0, count: 0 }
-        existing.sum += option.impliedVolatility * 100
-        existing.count += 1
-        strikeMap.set(option.strike, existing)
-    })
-
-    return Array.from(strikeMap.entries())
-        .map(([strike, entry]) => ({
-            strike,
-            iv: entry.sum / entry.count,
-        }))
-        .sort((a, b) => a.strike - b.strike)
 }
 
 function calculateHistoricalVolatility(candleData: CandleData[], lookbackDays: number): number | null {

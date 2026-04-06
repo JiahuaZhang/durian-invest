@@ -1,4 +1,4 @@
-import type { YahooOption, YahooOptionChainEntry } from '@/utils/yahoo'
+import type { GexPoint, YahooOptionChainEntry } from '@/utils/yahoo'
 import { ColorType, createChart, HistogramSeries, LineSeries, type Time } from 'lightweight-charts'
 import { Filter } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
@@ -9,13 +9,6 @@ import { formatCompactNumber, formatStrike } from './utils'
 type OptionGexProps = {
     chain: YahooOptionChainEntry | null
     spotPrice?: number
-}
-
-type GexPoint = {
-    strike: number
-    callGex: number
-    putGex: number
-    totalGex: number
 }
 
 type GammaZone = {
@@ -54,8 +47,8 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
 
     const safeSpotPrice = typeof spotPrice === 'number' && Number.isFinite(spotPrice) ? spotPrice : null
 
-    const gexData = computeGexByStrike(chain, safeSpotPrice, gexSource)
-    const threshold = Math.max(...gexData.map(point => point.totalGex)) * 0.01
+    const gexData = chain == null ? [] : (gexSource === 'openInterest' ? chain.gexByOI : chain.gexByVolume)
+    const threshold = gexData.length > 0 ? Math.max(...gexData.map(point => point.totalGex)) * 0.01 : 0
     const filteredData = isFilterEnabled
         ? gexData.filter(point => Math.abs(point.totalGex) > threshold)
         : gexData
@@ -96,7 +89,6 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
         })
 
         if (mode === 'overlay') {
-            // Call GEX (positive bars, green)
             const callSeries = chart.addSeries(HistogramSeries, {
                 priceLineVisible: false,
                 lastValueVisible: false,
@@ -109,7 +101,6 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
                 })),
             )
 
-            // Put GEX (negative bars, red)
             const putSeries = chart.addSeries(HistogramSeries, {
                 priceLineVisible: false,
                 lastValueVisible: false,
@@ -122,7 +113,6 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
                 })),
             )
         } else {
-            // Net GEX (single series, colored by sign)
             const netSeries = chart.addSeries(HistogramSeries, {
                 priceLineVisible: false,
                 lastValueVisible: false,
@@ -153,7 +143,6 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
             spotSeries.attachPrimitive(vertLine)
         }
 
-        // Background zones for long/short gamma areas
         for (const { start, end, isLong } of gammaZones) {
             if (start === end) continue;
 
@@ -337,76 +326,6 @@ export function OptionGex({ chain, spotPrice }: OptionGexProps) {
             </div>
         </section>
     )
-}
-
-// ============================================================================
-// GEX Computation
-// ============================================================================
-
-function calculateGamma(
-    S: number,
-    K: number,
-    T: number,
-    sigma: number,
-    r = 0.05,
-): number {
-    if (T <= 0 || sigma === 0 || S === 0) return 0
-
-    const d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T))
-    const nd1 = (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * d1 * d1)
-
-    return nd1 / (S * sigma * Math.sqrt(T))
-}
-
-function computeGexByStrike(chain: YahooOptionChainEntry | null, spotPrice: number | null, source: GexSource = 'openInterest'): GexPoint[] {
-    if (!chain || spotPrice == null || spotPrice <= 0) return []
-
-    const now = Date.now() / 1000
-    const strikeMap = new Map<number, { callGex: number; putGex: number }>()
-
-    const processOption = (option: YahooOption, isCall: boolean) => {
-        const weight = (source === 'volume' ? option.volume : option.openInterest) ?? 0
-        if (weight <= 0) return
-
-        const iv = option.impliedVolatility ?? 0
-        if (iv <= 0) return
-
-        const dt = new Date(option.expiration * 1000)
-        const isEDT = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/New_York',
-            timeZoneName: 'short',
-        }).format(dt).includes('EDT')
-
-        const utcMidnight = Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth(), dt.getUTCDate()) / 1000
-        const offsetHours = isEDT ? 4 : 5
-        const preciseExpiration = utcMidnight + (16 + offsetHours) * 3600
-
-        const T = (preciseExpiration - now) / (365 * 24 * 3600)
-        if (T <= 0) return
-
-        const gamma = calculateGamma(spotPrice, option.strike, T, iv)
-        const gexValue = gamma * weight * 100 * spotPrice * 0.01 * spotPrice
-
-        const existing = strikeMap.get(option.strike) ?? { callGex: 0, putGex: 0 }
-        if (isCall) {
-            existing.callGex += gexValue
-        } else {
-            existing.putGex += gexValue
-        }
-        strikeMap.set(option.strike, existing)
-    }
-
-    chain.calls.forEach(option => processOption(option, true))
-    chain.puts.forEach(option => processOption(option, false))
-
-    return Array.from(strikeMap.entries())
-        .map(([strike, data]) => ({
-            strike,
-            callGex: data.callGex,
-            putGex: data.putGex,
-            totalGex: data.callGex - data.putGex,
-        }))
-        .sort((a, b) => a.strike - b.strike)
 }
 
 function findGammaZones(gexData: GexPoint[]): GammaZone[] {
