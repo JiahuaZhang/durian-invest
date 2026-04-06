@@ -10,6 +10,9 @@ more tools: https://www.cmegroup.com/trading/equity-index/us-index/equity-index-
 Early Birds Get the Vol: Morning Volatility Uncertainty and Variance Risk Premium
 VVIX morning (10: est) 75 percentile
 
+https://x.com/zostaff/status/2040436511020093614
+Financial Freedom in 6 Steps. How to Build an LLM for Trading.
+
 1. 日内动量策略（Intraday Momentum）— ORB的"学术亲兄弟"
 这是Gao等人在报告里验证的那个策略的直接应用版：看前半小时方向，只在最后半小时交易。
 规则极简：如果开盘半小时市场上涨，在最后半小时做多；如果下跌，最后半小时做空。收盘平仓。 Alpha Architect

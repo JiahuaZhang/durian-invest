@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { CHART_MODES, METRIC_VIEWS } from './option-analysis/constants'
 import { OptionBarChart } from './option-analysis/OptionBarChart'
+import { OptionChainTable } from './option-analysis/OptionChainTable'
 import { OptionGex } from './option-analysis/OptionGex'
 import { OptionVolatility } from './option-analysis/OptionVolatility'
 import type { ChartMode, MaxPainResult, MetricView } from './option-analysis/types'
@@ -152,6 +153,31 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
 
     return (
         <section un-w='6xl' un-border="~ slate-200 rounded-xl" un-p="4" un-flex="~ col gap-4">
+
+            <div un-flex="~ gap-2 wrap items-center">
+                <div un-text="sm slate-500">Expiration Dates:</div>
+                {expirationDates.map(date => {
+                    const active = selectedDate === date
+                    return (
+                        <button
+                            key={date}
+                            type="button"
+                            onClick={() => onDateClick(date)}
+                            un-p="x-2.5 y-1.5"
+                            un-rounded="lg"
+                            un-border="~ slate-200"
+                            un-text={`xs ${active ? 'white' : 'slate-600'}`}
+                            un-bg={active ? 'blue-600' : 'white hover:slate-50'}
+                            un-cursor="pointer"
+                        >
+                            {formatExpirationDate(date, active)}
+                        </button>
+                    )
+                })}
+            </div>
+
+            <OptionChainTable chain={activeChain} spotPrice={quote?.regularMarketPrice} />
+
             <header un-flex="~ justify-between">
                 <div un-flex="~  gap-4">
                     <div un-flex="~ gap-2">
@@ -222,28 +248,6 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
                 </div>
             </header>
 
-            <div un-flex="~ gap-2 wrap items-center">
-                <div un-text="sm slate-500">Expiration Dates:</div>
-                {expirationDates.map(date => {
-                    const active = selectedDate === date
-                    return (
-                        <button
-                            key={date}
-                            type="button"
-                            onClick={() => onDateClick(date)}
-                            un-p="x-2.5 y-1.5"
-                            un-rounded="lg"
-                            un-border="~ slate-200"
-                            un-text={`xs ${active ? 'white' : 'slate-600'}`}
-                            un-bg={active ? 'blue-600' : 'white hover:slate-50'}
-                            un-cursor="pointer"
-                        >
-                            {formatExpirationDate(date, active)}
-                        </button>
-                    )
-                })}
-            </div>
-
             {loading && (
                 <div un-h="88" un-flex="~ items-center justify-center" un-text="slate-500">
                     Loading option chain...
@@ -266,39 +270,36 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
                 <>
                     <OptionBarChart strikes={strikes} mode={mode} metricView={metricView} spotPrice={quote?.regularMarketPrice} />
 
-                    <div un-grid="~" un-text="sm slate-600">
-                        {(metricView === 'openInterest' || metricView === 'both') && (
-                            <div un-flex="~ gap-2">
-                                <span>
-                                    Call OI: <strong un-text="green-700">{formatCompactNumber(totals.callOpenInterest)}</strong>
-                                </span>
-                                <span>
-                                    Put OI: <strong un-text="red-700">{formatCompactNumber(totals.putOpenInterest)}</strong>
-                                </span>
-                                <span>
-                                    Net OI: <strong>{formatCompactNumber(totals.callOpenInterest - totals.putOpenInterest)}</strong>
-                                </span>
-                                <span>
-                                    Put Call Ratio: <strong un-text={oiPutCallRatio > 1 ? 'red-700' : 'green-700'}>{oiPutCallRatio?.toFixed(2)}</strong>
-                                </span>
-                            </div>
-                        )}
-                        {(metricView === 'volume' || metricView === 'both') && (
-                            <div un-flex="~ gap-2">
-                                <span>
-                                    Call Vol: <strong un-text="green-500">{formatCompactNumber(totals.callVolume)}</strong>
-                                </span>
-                                <span>
-                                    Put Vol: <strong un-text="red-500">{formatCompactNumber(totals.putVolume)}</strong>
-                                </span>
-                                <span>
-                                    Net Vol: <strong>{formatCompactNumber(totals.callVolume - totals.putVolume)}</strong>
-                                </span>
-                                <span>
-                                    Put Call Ratio: <strong un-text={volumePutCallRatio > 1 ? 'red-700' : 'green-700'}>{volumePutCallRatio?.toFixed(2)}</strong>
-                                </span>
-                            </div>
-                        )}
+                    <div un-flex="~ justify-between" un-text="sm slate-600">
+                        <div un-flex="~ gap-2">
+                            <span>
+                                Call OI: <strong un-text="green-700">{formatCompactNumber(totals.callOpenInterest)}</strong>
+                            </span>
+                            <span>
+                                Put OI: <strong un-text="red-700">{formatCompactNumber(totals.putOpenInterest)}</strong>
+                            </span>
+                            <span>
+                                Net OI: <strong>{formatCompactNumber(totals.callOpenInterest - totals.putOpenInterest)}</strong>
+                            </span>
+                            <span>
+                                Put Call Ratio: <strong un-text={oiPutCallRatio > 1 ? 'red-700' : 'green-700'}>{oiPutCallRatio?.toFixed(2)}</strong>
+                            </span>
+                        </div>
+
+                        <div un-flex="~ gap-2">
+                            <span>
+                                Call Vol: <strong un-text="green-500">{formatCompactNumber(totals.callVolume)}</strong>
+                            </span>
+                            <span>
+                                Put Vol: <strong un-text="red-500">{formatCompactNumber(totals.putVolume)}</strong>
+                            </span>
+                            <span>
+                                Net Vol: <strong>{formatCompactNumber(totals.callVolume - totals.putVolume)}</strong>
+                            </span>
+                            <span>
+                                Put Call Ratio: <strong un-text={volumePutCallRatio > 1 ? 'red-700' : 'green-700'}>{volumePutCallRatio?.toFixed(2)}</strong>
+                            </span>
+                        </div>
                     </div>
                 </>
             )}
