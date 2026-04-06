@@ -1,6 +1,11 @@
 import type { YahooOptionChainEntry } from '@/utils/yahoo'
 import { formatStrike } from './utils'
 
+function calcPremiumBreakdown(type: 'call' | 'put', strike: number, spot: number, lastPrice: number) {
+    const intrinsic = type === 'call' ? Math.max(0, spot - strike) : Math.max(0, strike - spot)
+    return { intrinsic, extrinsic: Math.max(0, lastPrice - intrinsic) }
+}
+
 type Props = {
     chain: YahooOptionChainEntry | null
     spotPrice?: number
@@ -26,6 +31,8 @@ export function OptionChainTable({ chain, spotPrice }: Props) {
                 <thead un-position="sticky top-0 z-1" un-bg="white">
                     <tr un-border="b slate-200" un-text="slate-500">
                         <th un-text="right" un-p="x-3 y-1" un-bg="green-50">Last</th>
+                        <th un-text="right" un-p="x-3 y-1" un-bg="green-50">Intrinsic</th>
+                        <th un-text="right" un-p="x-3 y-1" un-bg="green-50">Extrinsic</th>
                         <th un-text="right" un-p="x-3 y-1" un-bg="green-50">IV</th>
                         <th un-text="right" un-p="x-3 y-1" un-bg="green-50">Volume</th>
                         <th un-text="right" un-p="x-3 y-1" un-bg="green-50">OI</th>
@@ -39,6 +46,8 @@ export function OptionChainTable({ chain, spotPrice }: Props) {
                         <th un-text="right" un-p="x-3 y-1" un-bg="red-50">OI</th>
                         <th un-text="right" un-p="x-3 y-1" un-bg="red-50">Volume</th>
                         <th un-text="right" un-p="x-3 y-1" un-bg="red-50">IV</th>
+                        <th un-text="right" un-p="x-3 y-1" un-bg="red-50">Extrinsic</th>
+                        <th un-text="right" un-p="x-3 y-1" un-bg="red-50">Intrinsic</th>
                         <th un-text="right" un-p="x-3 y-1" un-bg="red-50">Last</th>
                     </tr>
                 </thead>
@@ -50,11 +59,26 @@ export function OptionChainTable({ chain, spotPrice }: Props) {
                         const isCallITM = call ? call.inTheMoney : strike < atmStrike
                         const isPutITM = put ? put.inTheMoney : strike > atmStrike
 
+                        const callBreakdown = spotPrice != null && call?.lastPrice != null
+                            ? calcPremiumBreakdown('call', strike, spotPrice, call.lastPrice) : null
+                        const putBreakdown = spotPrice != null && put?.lastPrice != null
+                            ? calcPremiumBreakdown('put', strike, spotPrice, put.lastPrice) : null
+
                         return (
                             <tr key={strike} un-border="b slate-100">
                                 <td un-text="right" un-p="x-3 y-0.5" un-bg={isCallITM ? 'green-50' : ''}>
                                     <span un-text={isCallITM ? 'green-700' : 'slate-500'}>
                                         {call?.lastPrice != null ? `$${call.lastPrice.toFixed(2)}` : '—'}
+                                    </span>
+                                </td>
+                                <td un-text="right" un-p="x-3 y-0.5" un-bg={isCallITM ? 'green-50' : ''}>
+                                    <span un-text={isCallITM ? 'green-700' : 'slate-500'}>
+                                        {callBreakdown != null ? `$${callBreakdown.intrinsic.toFixed(2)}` : '—'}
+                                    </span>
+                                </td>
+                                <td un-text="right" un-p="x-3 y-0.5" un-bg={isCallITM ? 'green-50' : ''}>
+                                    <span un-text={isCallITM ? 'green-700' : 'slate-500'}>
+                                        {callBreakdown != null ? `$${callBreakdown.extrinsic.toFixed(2)}` : '—'}
                                     </span>
                                 </td>
                                 <td un-text="right" un-p="x-3 y-0.5" un-bg={isCallITM ? 'green-50' : ''}>
@@ -93,6 +117,16 @@ export function OptionChainTable({ chain, spotPrice }: Props) {
                                 <td un-text="right" un-p="x-3 y-0.5" un-bg={isPutITM ? 'red-50' : ''}>
                                     <span un-text={isPutITM ? 'red-700' : 'slate-500'}>
                                         {put != null ? `${(put.impliedVolatility * 100).toFixed(1)}%` : '—'}
+                                    </span>
+                                </td>
+                                <td un-text="right" un-p="x-3 y-0.5" un-bg={isPutITM ? 'red-50' : ''}>
+                                    <span un-text={isPutITM ? 'red-700' : 'slate-500'}>
+                                        {putBreakdown != null ? `$${putBreakdown.extrinsic.toFixed(2)}` : '—'}
+                                    </span>
+                                </td>
+                                <td un-text="right" un-p="x-3 y-0.5" un-bg={isPutITM ? 'red-50' : ''}>
+                                    <span un-text={isPutITM ? 'red-700' : 'slate-500'}>
+                                        {putBreakdown != null ? `$${putBreakdown.intrinsic.toFixed(2)}` : '—'}
                                     </span>
                                 </td>
                                 <td un-text="right" un-p="x-3 y-0.5" un-bg={isPutITM ? 'red-50' : ''}>

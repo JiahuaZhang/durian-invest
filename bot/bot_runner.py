@@ -6,7 +6,7 @@ import logging
 from typing import List
 from dotenv import load_dotenv
 
-from strategies import StrategyRegistry, TradingStrategy
+from strategies import StrategyRegistry, TradingStrategy, load_strategy_module
 
 load_dotenv()
 
@@ -85,6 +85,9 @@ async def main():
     strategies_env = os.getenv('STRATEGIES', 'gemini-portfolio')
     strategy_names = [s.strip() for s in strategies_env.split(',')]
     
+    for name in strategy_names:
+        load_strategy_module(name)
+
     for name in strategy_names:
         if not StrategyRegistry.is_registered(name):
             available = ', '.join(StrategyRegistry.list_strategies())

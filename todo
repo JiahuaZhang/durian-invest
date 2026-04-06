@@ -1,3 +1,7 @@
+option chain table:
+UI improvement: call or put split price => in the money part, and otm part
+update background, use histogram like to show relative width
+
 option? by price level; by date. aggregate (yahoo finance)
 furthur exploration, get implied volatility, delta etc greeks.
 stock, more than per day interval, configurable, per hour, per 15 min, per 5 min
