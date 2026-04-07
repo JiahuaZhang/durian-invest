@@ -1,6 +1,7 @@
 option chain table:
 UI improvement: call or put split price => in the money part, and otm part
 update background, use histogram like to show relative width
+25 delta put call skew
 
 option? by price level; by date. aggregate (yahoo finance)
 furthur exploration, get implied volatility, delta etc greeks.

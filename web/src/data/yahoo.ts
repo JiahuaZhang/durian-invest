@@ -1,5 +1,5 @@
+import { CandleData } from '@/components/analysis/context/ChartDataContext';
 import { createServerFn } from '@tanstack/react-start';
-import { CandleData } from "../components/MAChart";
 
 export type YahooQuote = {
     high: number[]

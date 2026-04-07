@@ -47,6 +47,20 @@ export type VolPoint = {
     iv: number
 }
 
+export type ChainSideStats = {
+    maxLastPrice: number
+    maxIntrinsic: number
+    maxExtrinsic: number
+    maxIV: number
+    maxVolume: number
+    maxOI: number
+}
+
+export type ChainStats = {
+    call: ChainSideStats
+    put: ChainSideStats
+}
+
 export type YahooOptionChainEntry = {
     expirationDate: number
     hasMiniOptions: boolean
@@ -58,6 +72,7 @@ export type YahooOptionChainEntry = {
     gexByVolume: GexPoint[]
     callVolCurve: VolPoint[]
     putVolCurve: VolPoint[]
+    chainStats: ChainStats
 }
 
 export type YahooOptionChainResult = {
@@ -83,7 +98,7 @@ export type YahooOptionChainResult = {
 }
 
 // Raw types for deserializing the Yahoo Finance API response before enrichment
-type RawChainEntry = Omit<YahooOptionChainEntry, 'strikeMetrics' | 'maxPain' | 'gexByOI' | 'gexByVolume' | 'callVolCurve' | 'putVolCurve'>
+type RawChainEntry = Omit<YahooOptionChainEntry, 'strikeMetrics' | 'maxPain' | 'gexByOI' | 'gexByVolume' | 'callVolCurve' | 'putVolCurve' | 'chainStats'>
 type RawResult = Omit<YahooOptionChainResult, 'options'> & { options: RawChainEntry[] }
 type YahooResponse = {
     optionChain: {
@@ -290,6 +305,31 @@ function computeVolCurve(options: YahooOption[]): VolPoint[] {
         .sort((a, b) => a.strike - b.strike)
 }
 
+function computeChainStats(calls: YahooOption[], puts: YahooOption[], spotPrice: number): ChainStats {
+    const maxOf = (nums: number[]) => nums.length === 0 ? 0 : Math.max(0, ...nums)
+    const callIntrinsic = (strike: number) => Math.max(0, spotPrice - strike)
+    const putIntrinsic = (strike: number) => Math.max(0, strike - spotPrice)
+
+    return {
+        call: {
+            maxLastPrice: maxOf(calls.map(o => o.lastPrice ?? 0)),
+            maxIntrinsic: maxOf(calls.map(o => callIntrinsic(o.strike))),
+            maxExtrinsic: maxOf(calls.map(o => Math.max(0, (o.lastPrice ?? 0) - callIntrinsic(o.strike)))),
+            maxIV: maxOf(calls.map(o => (o.impliedVolatility ?? 0) * 100)),
+            maxVolume: maxOf(calls.map(o => o.volume ?? 0)),
+            maxOI: maxOf(calls.map(o => o.openInterest ?? 0)),
+        },
+        put: {
+            maxLastPrice: maxOf(puts.map(o => o.lastPrice ?? 0)),
+            maxIntrinsic: maxOf(puts.map(o => putIntrinsic(o.strike))),
+            maxExtrinsic: maxOf(puts.map(o => Math.max(0, (o.lastPrice ?? 0) - putIntrinsic(o.strike)))),
+            maxIV: maxOf(puts.map(o => (o.impliedVolatility ?? 0) * 100)),
+            maxVolume: maxOf(puts.map(o => o.volume ?? 0)),
+            maxOI: maxOf(puts.map(o => o.openInterest ?? 0)),
+        },
+    }
+}
+
 function enrichChainEntry(raw: RawChainEntry, spotPrice: number): YahooOptionChainEntry {
     return {
         ...raw,
@@ -299,6 +339,7 @@ function enrichChainEntry(raw: RawChainEntry, spotPrice: number): YahooOptionCha
         gexByVolume: spotPrice > 0 ? computeGex(raw.calls, raw.puts, spotPrice, 'volume') : [],
         callVolCurve: computeVolCurve(raw.calls),
         putVolCurve: computeVolCurve(raw.puts),
+        chainStats: computeChainStats(raw.calls, raw.puts, spotPrice),
     }
 }
 
