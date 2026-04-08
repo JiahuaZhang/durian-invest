@@ -388,3 +388,28 @@ export const getOptionOpenInterestData = createServerFn({ method: 'GET' })
     .handler(async ({ data }) => {
         return await fetchYahooOptionChain(data.symbol, data.date)
     })
+
+// Fetches all expiration dates in batches and returns a single result with all chains populated.
+export const getAllOptionChainData = createServerFn({ method: 'GET' })
+    .inputValidator((data: { symbol: string }) => data)
+    .handler(async ({ data }) => {
+        const first = await fetchYahooOptionChain(data.symbol)
+
+        const loadedDates = new Set(first.options.map(o => o.expirationDate))
+        const remaining = first.expirationDates.filter(d => !loadedDates.has(d))
+
+        const additionalChains: YahooOptionChainEntry[] = []
+        const BATCH_SIZE = 5
+        for (let i = 0; i < remaining.length; i += BATCH_SIZE) {
+            const batch = remaining.slice(i, i + BATCH_SIZE)
+            const results = await Promise.allSettled(batch.map(date => fetchYahooOptionChain(data.symbol, date)))
+            for (const r of results) {
+                if (r.status === 'fulfilled') additionalChains.push(...r.value.options)
+            }
+        }
+
+        return {
+            ...first,
+            options: [...first.options, ...additionalChains].sort((a, b) => a.expirationDate - b.expirationDate),
+        }
+    })
