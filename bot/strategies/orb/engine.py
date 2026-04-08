@@ -4,6 +4,7 @@ from enum import Enum
 from typing import Dict, Optional, Any
 
 import pytz
+from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest
 from alpaca.data.timeframe import TimeFrame
@@ -75,6 +76,7 @@ class ORBEngine:
                 timeframe=TimeFrame.Minute,
                 start=start,
                 end=end,
+                feed=DataFeed.IEX,
             )
             bars = self.data_client.get_stock_bars(request)
             bar_list = bars[symbol] if symbol in bars else []
@@ -147,6 +149,7 @@ class ORBEngine:
                 start=start,
                 end=end,
                 limit=lookback,
+                feed=DataFeed.IEX,
             )
             bars = self.data_client.get_stock_bars(request)
             bar_list = bars[symbol] if symbol in bars else []
@@ -168,7 +171,7 @@ class ORBEngine:
             return None
 
         try:
-            request = StockLatestBarRequest(symbol_or_symbols=symbol)
+            request = StockLatestBarRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
             latest = self.data_client.get_stock_latest_bar(request)
             bar = latest[symbol] if symbol in latest else None
             if not bar:
@@ -262,6 +265,7 @@ class ORBEngine:
                 timeframe=TimeFrame.Minute,
                 start=market_open,
                 end=now_et,
+                feed=DataFeed.IEX,
             )
             bars = self.data_client.get_stock_bars(request)
             bar_list = bars[symbol] if symbol in bars else []
@@ -357,7 +361,7 @@ class ORBEngine:
             return
 
         try:
-            request = StockLatestBarRequest(symbol_or_symbols=symbol)
+            request = StockLatestBarRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
             latest = self.data_client.get_stock_latest_bar(request)
             bar = latest[symbol] if symbol in latest else None
             if not bar:
@@ -434,7 +438,7 @@ class ORBEngine:
     async def close_eod(self, symbol: str):
         if self.states.get(symbol) == SymbolState.IN_POSITION:
             try:
-                request = StockLatestBarRequest(symbol_or_symbols=symbol)
+                request = StockLatestBarRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
                 latest = self.data_client.get_stock_latest_bar(request)
                 bar = latest[symbol] if symbol in latest else None
                 exit_price = float(bar.close) if bar else 0

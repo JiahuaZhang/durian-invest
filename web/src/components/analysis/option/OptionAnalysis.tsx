@@ -1,4 +1,5 @@
 import { getAllOptionChainData, getOptionOpenInterestData, type MaxPainResult, type YahooOptionChainResult } from '@/utils/yahoo'
+import { OptionMaxPainChart, OptionMaxPainTiles } from './option-analysis/OptionMaxPainChart'
 import { RefreshCw } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { CHART_MODES, METRIC_VIEWS } from './option-analysis/constants'
@@ -417,26 +418,11 @@ export function OptionAnalysis({ symbol }: OptionAnalysisProps) {
             <OptionGex chain={activeChain} spotPrice={spotPrice} />
             <OptionVolatility symbol={normalizedSymbol} chain={activeChain} spotPrice={spotPrice} />
 
-            <div un-flex="~ col gap-2">
-                {[...maxPainCache.keys()].sort().map(key => {
-                    const maxPain = maxPainCache.get(key)
-                    if (!maxPain) return null
-                    const gap = maxPain.strike - (spotPrice ?? 0)
-                    return (
-                        <div key={key} un-border="~ sky-200 rounded-lg" un-bg="sky-50" un-p="2" un-flex="~ col gap-1">
-                            <p un-text="sm">
-                                {formatExpirationDate(key, true)} Max Pain: <span un-font="bold">${maxPain.strike}</span>
-                            </p>
-                            <div un-text="xs" un-flex="~ gap-4 wrap">
-                                <span>Call Payout: <strong>${formatCompactNumber(maxPain.callValue ?? 0)}</strong></span>
-                                <span>Put Payout: <strong>${formatCompactNumber(maxPain.putValue ?? 0)}</strong></span>
-                                <span>Total Payout: <strong>${formatCompactNumber(maxPain.totalValue ?? 0)}</strong></span>
-                                <span>Gap vs spot: <strong>{gap > 0 ? '+' : ''}{gap.toFixed(2)}</strong></span>
-                            </div>
-                        </div>
-                    )
-                })}
-            </div>
+            {maxPainCache.size > 0 && (
+                allChains != null
+                    ? <OptionMaxPainChart maxPainCache={maxPainCache} spotPrice={spotPrice} />
+                    : <OptionMaxPainTiles maxPainCache={maxPainCache} spotPrice={spotPrice} />
+            )}
         </section>
     )
 }
