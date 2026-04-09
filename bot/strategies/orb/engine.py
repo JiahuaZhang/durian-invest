@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from enum import Enum
@@ -71,18 +72,27 @@ class ORBEngine:
         end = ET.localize(datetime(today.year, today.month, today.day, eh, em))
 
         try:
-            request = StockBarsRequest(
-                symbol_or_symbols=symbol,
-                timeframe=TimeFrame.Minute,
-                start=start,
-                end=end,
-                feed=DataFeed.IEX,
-            )
-            bars = self.data_client.get_stock_bars(request)
-            bar_list = bars[symbol] if symbol in bars else []
+            # IEX bars may take a minute or two to be published after the range closes;
+            # retry up to 3 times with 60s delays before giving up.
+            bar_list = []
+            for attempt in range(3):
+                request = StockBarsRequest(
+                    symbol_or_symbols=symbol,
+                    timeframe=TimeFrame.Minute,
+                    start=start,
+                    end=end,
+                    feed=DataFeed.IEX,
+                )
+                bars = self.data_client.get_stock_bars(request)
+                bar_list = bars[symbol] if symbol in bars else []
+                if bar_list:
+                    break
+                if attempt < 2:
+                    logger.warning(f"No bars for {symbol} yet (attempt {attempt + 1}/3), retrying in 60s...")
+                    await asyncio.sleep(60)
 
             if not bar_list:
-                logger.warning(f"No bars for {symbol} in opening range window")
+                logger.warning(f"No bars for {symbol} in opening range window after retries")
                 return
 
             high = max(b.high for b in bar_list)
