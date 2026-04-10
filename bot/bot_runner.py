@@ -82,7 +82,7 @@ class BotRunner:
 
 async def main():
     # gemini-portfolio,sma
-    strategies_env = os.getenv('STRATEGIES', 'gemini-portfolio')
+    strategies_env = os.getenv('STRATEGIES', 'orb,weather-arb') 
     strategy_names = [s.strip() for s in strategies_env.split(',')]
     
     for name in strategy_names:

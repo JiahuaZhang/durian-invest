@@ -90,8 +90,8 @@ class ORBStrategy(TradingStrategy):
         # Schedule daily jobs (all ET, weekdays only)
         jobs = [
             ('orb_pre_market',    9, 25, self._pre_market_setup,  'Pre-market setup'),
-            ('orb_collect_range', 9, 46, self._collect_ranges,    'Collect opening ranges'),
-            ('orb_start_monitor', 9, 47, self._start_monitoring,  'Start breakout monitoring'),
+            ('orb_collect_range', 9, 50, self._collect_ranges,    'Collect opening ranges'),
+            ('orb_start_monitor', 9, 51, self._start_monitoring,  'Start breakout monitoring'),
             ('orb_stop_entries', 15, 30, self._stop_entries,      'Stop new entries'),
             ('orb_eod_close',    15, 45, self._eod_close,         'EOD close positions'),
             ('orb_daily_summary',15, 50, self._daily_summary,     'Daily summary'),

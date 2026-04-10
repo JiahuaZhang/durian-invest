@@ -1,14 +1,14 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from enum import Enum
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, NamedTuple
 
 import pytz
+import yfinance as yf
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest
-from alpaca.data.timeframe import TimeFrame
+from alpaca.data.requests import StockLatestBarRequest
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -20,6 +20,27 @@ from .supabase_logger import SupabaseLogger
 
 logger = logging.getLogger(__name__)
 ET = pytz.timezone('America/New_York')
+
+
+class _YFBar(NamedTuple):
+    """Lightweight bar wrapper matching the Alpaca bar interface."""
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    timestamp: datetime
+
+    @classmethod
+    def from_row(cls, ts: datetime, row) -> '_YFBar':
+        return cls(
+            open=float(row['Open']),
+            high=float(row['High']),
+            low=float(row['Low']),
+            close=float(row['Close']),
+            volume=int(row['Volume']),
+            timestamp=ts,
+        )
 
 
 class SymbolState(Enum):
@@ -72,27 +93,23 @@ class ORBEngine:
         end = ET.localize(datetime(today.year, today.month, today.day, eh, em))
 
         try:
-            # IEX bars may take a minute or two to be published after the range closes;
-            # retry up to 3 times with 60s delays before giving up.
-            bar_list = []
-            for attempt in range(3):
-                request = StockBarsRequest(
-                    symbol_or_symbols=symbol,
-                    timeframe=TimeFrame.Minute,
-                    start=start,
-                    end=end,
-                    feed=DataFeed.IEX,
-                )
-                bars = self.data_client.get_stock_bars(request)
-                bar_list = bars[symbol] if symbol in bars else []
-                if bar_list:
-                    break
-                if attempt < 2:
-                    logger.warning(f"No bars for {symbol} yet (attempt {attempt + 1}/3), retrying in 60s...")
-                    await asyncio.sleep(60)
+            # Fetch via yfinance — covers NYSE/NASDAQ where SPY/QQQ actually trade.
+            # Alpaca IEX feed returns empty for these ETFs (IEX has near-zero opening volume for them).
+            loop = asyncio.get_event_loop()
+            hist = await loop.run_in_executor(
+                None,
+                lambda: yf.Ticker(symbol).history(start=start.date(), interval="1m", prepost=False),
+            )
+            if not hist.empty:
+                hist.index = hist.index.tz_convert(ET)
+                hist = hist[(hist.index >= start) & (hist.index < end)]
+            bar_list = [
+                _YFBar.from_row(ts, row)
+                for ts, row in hist.iterrows()
+            ] if not hist.empty else []
 
             if not bar_list:
-                logger.warning(f"No bars for {symbol} in opening range window after retries")
+                logger.warning(f"No bars for {symbol} in opening range window")
                 return
 
             high = max(b.high for b in bar_list)
@@ -151,21 +168,14 @@ class ORBEngine:
 
     async def _get_avg_volume(self, symbol: str, lookback: int = 20) -> int:
         try:
-            end = datetime.now(ET) - timedelta(days=1)
-            start = end - timedelta(days=lookback * 2)  # extra days for weekends/holidays
-            request = StockBarsRequest(
-                symbol_or_symbols=symbol,
-                timeframe=TimeFrame.Day,
-                start=start,
-                end=end,
-                limit=lookback,
-                feed=DataFeed.IEX,
+            loop = asyncio.get_event_loop()
+            hist = await loop.run_in_executor(
+                None,
+                lambda: yf.Ticker(symbol).history(period="40d", interval="1d"),
             )
-            bars = self.data_client.get_stock_bars(request)
-            bar_list = bars[symbol] if symbol in bars else []
-            if not bar_list:
+            if hist.empty:
                 return 0
-            return int(sum(b.volume for b in bar_list) / len(bar_list))
+            return int(hist['Volume'].tail(lookback).mean())
         except Exception as e:
             logger.error(f"Error fetching avg volume for {symbol}: {e}")
             return 0
@@ -270,20 +280,20 @@ class ORBEngine:
             today = now_et.date()
             market_open = ET.localize(datetime(today.year, today.month, today.day, 9, 30))
 
-            request = StockBarsRequest(
-                symbol_or_symbols=symbol,
-                timeframe=TimeFrame.Minute,
-                start=market_open,
-                end=now_et,
-                feed=DataFeed.IEX,
+            loop = asyncio.get_event_loop()
+            hist = await loop.run_in_executor(
+                None,
+                lambda: yf.Ticker(symbol).history(start=today, interval="1m", prepost=False),
             )
-            bars = self.data_client.get_stock_bars(request)
-            bar_list = bars[symbol] if symbol in bars else []
-            if not bar_list:
+            if hist.empty:
+                return 0
+            hist.index = hist.index.tz_convert(ET)
+            hist = hist[(hist.index >= market_open) & (hist.index <= now_et)]
+            if hist.empty:
                 return 0
 
-            tp_vol_sum = sum(((b.high + b.low + b.close) / 3) * b.volume for b in bar_list)
-            vol_sum = sum(b.volume for b in bar_list)
+            tp_vol_sum = sum(((row['High'] + row['Low'] + row['Close']) / 3) * row['Volume'] for _, row in hist.iterrows())
+            vol_sum = hist['Volume'].sum()
             return tp_vol_sum / vol_sum if vol_sum > 0 else 0
         except Exception as e:
             logger.error(f"Error computing VWAP for {symbol}: {e}")
