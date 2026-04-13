@@ -14,7 +14,7 @@ primary_region = "iad"
   #   STRATEGIES = "gemini-portfolio"  # AI portfolio only
   #   STRATEGIES = "orb,gemini-portfolio"  # Both strategies
   # Override via: fly secrets set STRATEGIES=...
-  STRATEGIES = "orb"
+  # STRATEGIES = "orb"
 
 # App scaling configuration
 [http_service]

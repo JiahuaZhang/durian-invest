@@ -34,17 +34,26 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # City → (ICAO station, lat, lon)
-# Keep aligned with the markets Kalshi actually lists.
+#
+# Station selection rules — each entry must match the NWS Daily Climate Report
+# station that Kalshi uses for settlement, NOT the nearest major airport:
+#
+#   KXHIGHNY  (NHIGH)   → Central Park, NY         → KNYC  (not KLGA/KJFK)
+#   KXHIGHCHI (CHIHIGH) → Chicago Midway, IL       → KMDW  (not KORD/O'Hare)
+#   KXHIGHLAX (LAHIGH)  → LA Airport, CA           → KLAX  ✓
+#   KXHIGHDEN (DENHIGH) → Denver, CO               → KDEN  ✓
+#   KXHIGHMIA (MIAHIGH) → Miami, FL                → KMIA  ✓
+#   KXHOUHIGH (HOUHIGH) → Houston-Hobby, TX        → KHOU  (not KIAH/Bush)
+#
+# Dallas, Atlanta, Seattle, Boston: no KXHIGH series exists on Kalshi (verified
+# via API 2026-04). Removed to avoid false matches on GLOBALTEMPERATURE markets.
 CITY_MAP = {
-    "New York":     ("KLGA",  40.7769, -73.8740),
-    "Chicago":      ("KORD",  41.9742, -87.9073),
-    "Los Angeles":  ("KLAX",  33.9425, -118.4081),
-    "Miami":        ("KMIA",  25.7959, -80.2870),
-    "Dallas":       ("KDFW",  32.8998, -97.0403),
-    "Denver":       ("KDEN",  39.8561, -104.6737),
-    "Atlanta":      ("KATL",  33.6367, -84.4281),
-    "Seattle":      ("KSEA",  47.4502, -122.3088),
-    "Boston":       ("KBOS",  42.3631, -71.0060),
+    "New York":     ("KNYC",  40.7829,  -73.9654),  # Central Park — NHIGH
+    "Chicago":      ("KMDW",  41.7868,  -87.7522),  # Midway — CHIHIGH
+    "Los Angeles":  ("KLAX",  33.9425, -118.4081),  # LAX Airport — LAHIGH
+    "Miami":        ("KMIA",  25.7959,  -80.2870),  # Miami Intl — MIAHIGH
+    "Denver":       ("KDEN",  39.8561, -104.6737),  # Denver Intl — DENHIGH
+    "Houston":      ("KHOU",  29.6454,  -95.2789),  # Hobby Airport — HOUHIGH
 }
 
 
@@ -54,32 +63,64 @@ def _now_iso() -> str:
 
 def _parse_market(market: dict) -> Optional[tuple]:
     """
-    Extract (city, metric, threshold_f, target_date) from a Kalshi market dict.
+    Extract (city, metric, threshold_f, target_date, direction) from a Kalshi market dict.
     Returns None if we cannot parse it.
+
+    direction is one of "above" | "below" | "between" — maps to the Kalshi
+    payout criterion.  Per contract terms:
+      "greater than" → strictly > threshold  (direction="above")
+      "less than"    → strictly < threshold  (direction="below")
+      "between"      → inclusive [low, high] (direction="between")
 
     Kalshi market titles look like:
       "Chicago high temperature above 54°F on March 11, 2026"
-      "New York high temperature on April 6, 2026"
+      "New York high temperature below 90°F on April 6, 2026"
+      "New York high temperature on April 6, 2026"  ← no explicit direction
     This is a best-effort parser — extend as you encounter actual title formats.
     """
+    import re
+
     title = market.get("title", "")
+    title_l = title.lower()
     target_date = None
 
     # Attempt to find a known city
-    city = next((c for c in CITY_MAP if c.lower() in title.lower()), None)
+    city = next((c for c in CITY_MAP if c.lower() in title_l), None)
     if not city:
         return None
 
     # Determine metric
-    if "high" in title.lower():
+    if "high" in title_l:
         metric = "high_temp"
-    elif "low" in title.lower():
+    elif "low" in title_l:
         metric = "low_temp"
     else:
         return None
 
+    # Determine payout direction.
+    #
+    # NHIGH/CHIHIGH/DENHIGH/MIAHIGH/HOUHIGH/LAHIGH/CITYLOW use strict operators:
+    #   "greater than" → strictly >  (threshold itself does NOT win)
+    #   "less than"    → strictly <
+    #   "between"      → inclusive [lo, hi]
+    #
+    # LOCALTEMPERATURE (NHIGHD) / GLOBALTEMPERATURE add:
+    #   "at least"  → ≥  (threshold wins; inclusive lower bound)
+    #   "at most"   → ≤  (threshold wins; inclusive upper bound)
+    #   "exactly"   → =
+    if "at least" in title_l or "or higher" in title_l:
+        direction = "at_least"
+    elif "at most" in title_l or "or lower" in title_l:
+        direction = "at_most"
+    elif "below" in title_l or "less than" in title_l or "under" in title_l:
+        direction = "below"
+    elif "between" in title_l:
+        direction = "between"
+    else:
+        # "above", "greater than", "over", or no explicit keyword → default to above
+        direction = "above"
+
     # Extract threshold (e.g. "54°F" or "90°F")
-    import re
     m = re.search(r"(\d+(?:\.\d+)?)\s*°?F", title)
     if not m:
         return None
@@ -96,29 +137,58 @@ def _parse_market(market: dict) -> Optional[tuple]:
     if not target_date:
         return None
 
-    return city, metric, threshold_f, target_date
+    return city, metric, threshold_f, target_date, direction
 
 
 def _estimate_probability(
     _metric: str,
     threshold_f: float,
+    direction: str,
     nws_forecast_f: Optional[float],
     _metar_temp_f: Optional[float],
 ) -> float:
     """
     Simple probability estimate: use NWS forecast as the primary signal.
-    Returns P(yes) — probability that the threshold is met.
+    Returns P(yes) aligned with the contract's payout direction.
+
+    direction: "above" | "at_least" | "below" | "at_most" | "between"
+      - "above"    → P(actual > threshold)   [strict, NHIGH/CHIHIGH/DENHIGH/MIAHIGH/LAHIGH/HOUHIGH]
+      - "at_least" → P(actual ≥ threshold)   [inclusive, LOCALTEMPERATURE/GLOBALTEMPERATURE]
+      - "below"    → P(actual < threshold)   [strict, all daily contracts]
+      - "at_most"  → P(actual ≤ threshold)   [inclusive, LOCALTEMPERATURE/GLOBALTEMPERATURE]
+      - "between"  → P(lo ≤ actual ≤ hi)     [inclusive on both ends, all contract types]
+
+    Strict contracts: "greater than" and "less than" exclude the exact threshold.
+    We shade the margin by -0.5°F so that a forecast exactly at the threshold
+    returns slightly below 0.5 (the exact value doesn't win a strict market).
+    Inclusive contracts ("at least"/"at most") need no shade.
 
     This is intentionally conservative. Improve by:
     - Using GFS ensemble spread for confidence intervals
     - Weighing METAR trend (current temp vs. historical for this time of day)
     """
+    import math
+
     if nws_forecast_f is None:
         return 0.5  # no information → neutral
 
-    margin = nws_forecast_f - threshold_f
+    if direction == "above":
+        # Strict >: threshold itself is a loss — shade margin down 0.5°F
+        margin = nws_forecast_f - threshold_f - 0.5
+    elif direction == "at_least":
+        # Inclusive ≥ (LOCALTEMPERATURE "at least"): threshold wins, no shade
+        margin = nws_forecast_f - threshold_f
+    elif direction == "below":
+        # Strict <: threshold itself is a loss — shade margin down 0.5°F
+        margin = threshold_f - nws_forecast_f - 0.5
+    elif direction == "at_most":
+        # Inclusive ≤ (LOCALTEMPERATURE "at most"): threshold wins, no shade
+        margin = threshold_f - nws_forecast_f
+    else:
+        # "between": use distance from lower bound as a proxy
+        margin = nws_forecast_f - threshold_f
+
     # Sigmoid-like mapping: margin of ±10°F → probability ~0.9 or ~0.1
-    import math
     p = 1 / (1 + math.exp(-margin / 5.0))
     return round(p, 4)
 
@@ -217,7 +287,7 @@ class WeatherArbStrategy(TradingStrategy):
         if not parsed:
             return
 
-        city, metric, threshold_f, target_date = parsed
+        city, metric, threshold_f, target_date, direction = parsed
         icao, lat, lon = CITY_MAP[city]
         ticker = market["ticker"]
         market_yes_price = market.get("yes_bid", 0) / 100.0  # Kalshi prices in cents
@@ -228,7 +298,7 @@ class WeatherArbStrategy(TradingStrategy):
         metar_f = await self._weather.get_metar_temp_f(icao)
         nws_f = await self._weather.get_nws_forecast_high_f(lat, lon, target_date)
 
-        our_p = _estimate_probability(metric, threshold_f, nws_f, metar_f)
+        our_p = _estimate_probability(metric, threshold_f, direction, nws_f, metar_f)
         edge = our_p - market_yes_price
 
         # Determine action
