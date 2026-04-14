@@ -14,8 +14,9 @@ _STRATEGY_MODULES = {
     'sma': 'strategies.sma_crossover_strategy',
     'gemini-portfolio': 'strategies.gemini_portfolio',
     'orb': 'strategies.orb',
-    'weather-arb': 'strategies.polymarket_weather',
+    'weather-arb': 'strategies.polymarket_weather.strategy',
     'option':      'strategies.option',
+    'kalshi-crypto': 'strategies.kalshi_crypto',
 }
 
 

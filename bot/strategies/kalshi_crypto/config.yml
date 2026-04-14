@@ -1,0 +1,201 @@
+# ─── Kalshi Crypto 15-min Prediction Bot ─────────────────────────────────────
+#
+# Confirmed assets (Kalshi series + Kraken OHLC validated 2026-04-14):
+#   BTC KXBTC, ETH KXETH, SOL KXSOL, XRP KXXRP,
+#   DOGE KXDOGE, BNB KXBNB, AVAX KXAVAX, LTC KXLTC
+#
+# ADA (KXADA) skipped — Kalshi series returns 404.
+#
+# Required .env entries:
+#   KALSHI_API_KEY_ID
+#   KALSHI_PRIVATE_KEY
+#   (SUPABASE_URL, SUPABASE_SERVICE_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID — from common.yml)
+
+name: kalshi-crypto
+
+kalshi:
+  api-key-id: ${KALSHI_API_KEY_ID}
+  private-key: ${KALSHI_PRIVATE_KEY}
+  dry-run: true          # flip to false for live trading
+
+# Poll every 30 seconds — strategies depend on candle age within the 15-min window
+scan-interval-seconds: 30
+
+# ─── Asset configurations ─────────────────────────────────────────────────────
+assets:
+
+  - id: btc
+    series: KXBTC
+    scalp:
+      entry-price: 0.92
+      target-price: 0.97
+      stop-price: 0.88
+      min-minutes-remaining: 2.0
+      max-bet-usd: 10.0
+      kelly-fraction: 0.25
+    reversal:
+      entry-price: 0.02
+      vol-threshold: 0.0015     # BTC 1-min return std dev
+      max-concurrent: 5
+      size-usd: 10.0
+    market-maker:
+      entry-price: 0.49
+      window-seconds: 60
+      cancel-after-seconds: 30
+      max-combined-cost: 0.98
+      size-usd: 50.0
+      max-bankroll-pct: 0.15
+
+  - id: eth
+    series: KXETH
+    scalp:
+      entry-price: 0.92
+      target-price: 0.97
+      stop-price: 0.88
+      min-minutes-remaining: 2.0
+      max-bet-usd: 5.0          # smaller caps for higher-vol assets
+      kelly-fraction: 0.25
+    reversal:
+      entry-price: 0.02
+      vol-threshold: 0.002      # ETH ~30% more volatile than BTC
+      max-concurrent: 3
+      size-usd: 5.0
+    market-maker:
+      entry-price: 0.49
+      window-seconds: 60
+      cancel-after-seconds: 30
+      max-combined-cost: 0.98
+      size-usd: 25.0
+      max-bankroll-pct: 0.10
+
+  - id: sol
+    series: KXSOL
+    scalp:
+      entry-price: 0.92
+      target-price: 0.97
+      stop-price: 0.88
+      min-minutes-remaining: 2.0
+      max-bet-usd: 5.0
+      kelly-fraction: 0.25
+    reversal:
+      entry-price: 0.02
+      vol-threshold: 0.003      # SOL is highly volatile
+      max-concurrent: 3
+      size-usd: 5.0
+    market-maker:
+      entry-price: 0.49
+      window-seconds: 60
+      cancel-after-seconds: 30
+      max-combined-cost: 0.98
+      size-usd: 25.0
+      max-bankroll-pct: 0.10
+
+  - id: xrp
+    series: KXXRP
+    scalp:
+      entry-price: 0.92
+      target-price: 0.97
+      stop-price: 0.88
+      min-minutes-remaining: 2.0
+      max-bet-usd: 5.0
+      kelly-fraction: 0.25
+    reversal:
+      entry-price: 0.02
+      vol-threshold: 0.0025
+      max-concurrent: 3
+      size-usd: 5.0
+    market-maker:
+      entry-price: 0.49
+      window-seconds: 60
+      cancel-after-seconds: 30
+      max-combined-cost: 0.98
+      size-usd: 25.0
+      max-bankroll-pct: 0.10
+
+  - id: doge
+    series: KXDOGE
+    scalp:
+      entry-price: 0.92
+      target-price: 0.97
+      stop-price: 0.88
+      min-minutes-remaining: 2.0
+      max-bet-usd: 5.0
+      kelly-fraction: 0.25
+    reversal:
+      entry-price: 0.02
+      vol-threshold: 0.003      # DOGE is highly volatile
+      max-concurrent: 3
+      size-usd: 5.0
+    market-maker:
+      entry-price: 0.49
+      window-seconds: 60
+      cancel-after-seconds: 30
+      max-combined-cost: 0.98
+      size-usd: 25.0
+      max-bankroll-pct: 0.10
+
+  - id: bnb
+    series: KXBNB
+    scalp:
+      entry-price: 0.92
+      target-price: 0.97
+      stop-price: 0.88
+      min-minutes-remaining: 2.0
+      max-bet-usd: 5.0
+      kelly-fraction: 0.25
+    reversal:
+      entry-price: 0.02
+      vol-threshold: 0.002
+      max-concurrent: 3
+      size-usd: 5.0
+    market-maker:
+      entry-price: 0.49
+      window-seconds: 60
+      cancel-after-seconds: 30
+      max-combined-cost: 0.98
+      size-usd: 25.0
+      max-bankroll-pct: 0.10
+
+  - id: avax
+    series: KXAVAX
+    scalp:
+      entry-price: 0.92
+      target-price: 0.97
+      stop-price: 0.88
+      min-minutes-remaining: 2.0
+      max-bet-usd: 5.0
+      kelly-fraction: 0.25
+    reversal:
+      entry-price: 0.02
+      vol-threshold: 0.0025
+      max-concurrent: 3
+      size-usd: 5.0
+    market-maker:
+      entry-price: 0.49
+      window-seconds: 60
+      cancel-after-seconds: 30
+      max-combined-cost: 0.98
+      size-usd: 25.0
+      max-bankroll-pct: 0.10
+
+  - id: ltc
+    series: KXLTC
+    scalp:
+      entry-price: 0.92
+      target-price: 0.97
+      stop-price: 0.88
+      min-minutes-remaining: 2.0
+      max-bet-usd: 5.0
+      kelly-fraction: 0.25
+    reversal:
+      entry-price: 0.02
+      vol-threshold: 0.002
+      max-concurrent: 3
+      size-usd: 5.0
+    market-maker:
+      entry-price: 0.49
+      window-seconds: 60
+      cancel-after-seconds: 30
+      max-combined-cost: 0.98
+      size-usd: 25.0
+      max-bankroll-pct: 0.10
