@@ -1,0 +1,21 @@
+# ─── Gemini Portfolio strategy config ────────────────────────────────────────
+#
+# Secrets required in .env (referenced from common.yml):
+#   ALPACA_API_KEY, ALPACA_SECRET_KEY
+#
+# Additional secret required in .env (Gemini-specific):
+#   GEMINI_API_KEY
+
+name: gemini-portfolio
+
+gemini:
+  api-key: ${GEMINI_API_KEY}
+  # Available models: gemini-2.5-flash (fast), gemini-2.5-pro (smarter, slower)
+  model: gemini-2.5-flash
+
+# Number of stocks to hold simultaneously
+portfolio-size: 15
+
+# Daily rebalance schedule (ET)
+schedule-hour: 9
+schedule-minute: 30

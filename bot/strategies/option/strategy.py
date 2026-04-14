@@ -26,7 +26,6 @@ Why sell puts, not calls?
   The CBOE PUT index has a 40-year Sharpe of 0.65 vs SPX at 0.49.
 """
 
-import os
 import asyncio
 import logging
 from datetime import datetime
@@ -53,7 +52,7 @@ load_dotenv()
 class OptionStrategy(TradingStrategy):
     def __init__(self, **config_overrides):
         super().__init__(**config_overrides)
-        self.config = OptionConfig.from_env()
+        self.config = OptionConfig.load()
         self.engine: OptionEngine = None
         self.scheduler = None
         self._weekly_signals: List[dict] = []

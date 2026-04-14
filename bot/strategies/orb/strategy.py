@@ -26,7 +26,7 @@ load_dotenv()
 class ORBStrategy(TradingStrategy):
     def __init__(self, **config_overrides):
         super().__init__(**config_overrides)
-        self.config = ORBConfig.from_env()
+        self.config = ORBConfig.load()
         self.trading_client = None
         self.data_client = None
         self.engine = None

@@ -1,0 +1,54 @@
+# ─── Option (systematic put selling) strategy config ─────────────────────────
+#
+# No secrets here — alpaca, supabase, and telegram come from common.yml.
+# Edit this file to tune filters; no env vars needed for parameters.
+#
+# Strategy logic:
+#   Every Monday at check-time, evaluate each symbol.
+#   If all three filters pass → send Telegram notification to sell an OTM put.
+#   Tuesday fallback: re-check symbols that had no Monday signal.
+
+name: option
+
+symbols:
+  - SPY
+  - QQQ
+
+# Time (ET) to check conditions on Monday/Tuesday
+check-time: "10:00"
+
+# ── Filter 1: IV Rank ─────────────────────────────────────────────────────────
+# Where current implied volatility sits in its 52-week range (0–100 scale).
+# Below ivr-min = premium too thin. Above ivr-max = possible panic, gamma risk.
+ivr-min: 30
+ivr-max: 70
+
+# ── Filter 2: IV minus Realized Volatility spread (percentage points) ─────────
+# Implied volatility must exceed 20-day realized volatility by at least this much.
+# This confirms the volatility risk premium is actually present.
+# Research baseline: 3–5 pp minimum. Below 3 pp = not worth the risk.
+iv-rv-min-spread: 3.0
+
+# ── Filter 3: Trend ───────────────────────────────────────────────────────────
+# Only sell puts when price is above the 50-day moving average (uptrend).
+# Selling puts into a sustained downtrend = high assignment risk.
+trend-filter: true
+
+# ── Strike selection ──────────────────────────────────────────────────────────
+# OTM distance: strike = current_price * (1 - wing-pct)
+# 2% OTM is safer than 1% for indexes — more room for the underlying to move
+wing-pct: 0.02
+
+# ── Expiry ────────────────────────────────────────────────────────────────────
+# Same-week Friday (4 DTE on Monday).
+# Research: weekly (WPUT index) has lower max drawdown than monthly selling.
+use-weekly-expiry: true
+
+# Re-check symbols that had no Monday signal
+tuesday-fallback: true
+
+# ── Optional: override Telegram for this strategy ────────────────────────────
+# Uncomment to use a different bot/chat than common.yml.
+# telegram:
+#   token: ${OPTION_TELEGRAM_BOT_TOKEN}
+#   chat-id: ${OPTION_TELEGRAM_CHAT_ID}

@@ -1,0 +1,27 @@
+# ─── Weather Arbitrage strategy config ───────────────────────────────────────
+#
+# Secrets required in .env (referenced from common.yml):
+#   SUPABASE_URL, SUPABASE_SERVICE_KEY
+#
+# Additional secrets required in .env (Kalshi-specific):
+#   KALSHI_API_KEY_ID      — from kalshi.com → Settings → API
+#   KALSHI_PRIVATE_KEY     — RSA private key (paste full PEM content)
+
+name: weather-arb
+
+kalshi:
+  api-key-id: ${KALSHI_API_KEY_ID}
+  private-key: ${KALSHI_PRIVATE_KEY}
+
+  # Set to false to place real bets (default: true = simulation only)
+  dry-run: true
+
+  # Maximum USD to bet per market signal
+  max-bet-usd: 5.0
+
+  # Minimum probability edge to enter a position (0.0–1.0)
+  # 0.15 = our estimated probability must exceed market price by 15 percentage points
+  edge-threshold: 0.15
+
+# How often to scan Kalshi weather markets (minutes)
+scan-interval-min: 5

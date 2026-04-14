@@ -1,0 +1,37 @@
+# ─── ORB (Opening Range Breakout) strategy config ────────────────────────────
+#
+# No secrets here — alpaca and supabase come from common.yml.
+# Edit this file to tune the strategy; no env vars needed for parameters.
+
+name: orb
+
+symbols:
+  - SPY
+  - QQQ
+
+# Opening range window (ET)
+range-start: "09:30"
+range-end: "09:45"
+
+# Latest time to enter a new position (ET)
+entry-end: "15:30"
+
+# EOD close time — all positions closed by this time (ET)
+eod-close-time: "15:45"
+
+# Breakout variant: simple | body_close | volume | vwap | combined
+variant: simple
+
+# Volume filter: bar volume must be >= this multiple of the 20-day average
+volume-threshold: 1.5
+
+# Position sizing
+position-size-pct: 0.05   # fraction of account equity per position
+max-positions: 2           # maximum concurrent open positions
+
+# Stop and target
+use-range-stop: true       # stop = opposite end of opening range
+take-profit-mult: 2.0      # profit target = 2x the stop distance (2R)
+
+# Real-time monitoring interval
+poll-interval-sec: 30
