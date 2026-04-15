@@ -81,7 +81,6 @@ class BotRunner:
 
 
 async def main():
-    # gemini-portfolio,sma
     strategies_env = os.getenv('STRATEGIES', 'kalshi-crypto')
     strategy_names = [s.strip() for s in strategies_env.split(',')]
     logger.info(f"Strategies to load: {strategy_names}")

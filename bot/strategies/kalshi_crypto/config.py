@@ -59,6 +59,9 @@ class KalshiCryptoConfig:
 
         assets = []
         for a in c.get('assets', []):
+            if not a.get('enabled', True):
+                continue
+
             s = a.get('scalp', {})
             r = a.get('reversal', {})
             m = a.get('market-maker', {})

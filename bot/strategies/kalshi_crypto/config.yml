@@ -1,8 +1,8 @@
 # ─── Kalshi Crypto 15-min Prediction Bot ─────────────────────────────────────
 #
-# Confirmed assets (Kalshi series + Kraken OHLC validated 2026-04-14):
-#   BTC KXBTC, ETH KXETH, SOL KXSOL, XRP KXXRP,
-#   DOGE KXDOGE, BNB KXBNB, AVAX KXAVAX, LTC KXLTC
+# Series names — verify each against the Kalshi API before enabling.
+# BTC confirmed: KXBTC15M
+# Others (KXETH, KXSOL, etc.) may also need a "15M" suffix — check before enabling.
 #
 # ADA (KXADA) skipped — Kalshi series returns 404.
 #
@@ -22,10 +22,12 @@ kalshi:
 scan-interval-seconds: 30
 
 # ─── Asset configurations ─────────────────────────────────────────────────────
+# Set enabled: true to activate an asset. Disabled assets are ignored at startup.
 assets:
 
   - id: btc
-    series: KXBTC
+    series: KXBTC15M
+    enabled: true
     scalp:
       entry-price: 0.92
       target-price: 0.97
@@ -47,7 +49,8 @@ assets:
       max-bankroll-pct: 0.15
 
   - id: eth
-    series: KXETH
+    series: KXETH          # verify series name before enabling
+    enabled: false
     scalp:
       entry-price: 0.92
       target-price: 0.97
@@ -69,7 +72,8 @@ assets:
       max-bankroll-pct: 0.10
 
   - id: sol
-    series: KXSOL
+    series: KXSOL          # verify series name before enabling
+    enabled: false
     scalp:
       entry-price: 0.92
       target-price: 0.97
@@ -91,7 +95,8 @@ assets:
       max-bankroll-pct: 0.10
 
   - id: xrp
-    series: KXXRP
+    series: KXXRP          # verify series name before enabling
+    enabled: false
     scalp:
       entry-price: 0.92
       target-price: 0.97
@@ -113,7 +118,8 @@ assets:
       max-bankroll-pct: 0.10
 
   - id: doge
-    series: KXDOGE
+    series: KXDOGE         # verify series name before enabling
+    enabled: false
     scalp:
       entry-price: 0.92
       target-price: 0.97
@@ -135,7 +141,8 @@ assets:
       max-bankroll-pct: 0.10
 
   - id: bnb
-    series: KXBNB
+    series: KXBNB          # verify series name before enabling
+    enabled: false
     scalp:
       entry-price: 0.92
       target-price: 0.97
@@ -157,7 +164,8 @@ assets:
       max-bankroll-pct: 0.10
 
   - id: avax
-    series: KXAVAX
+    series: KXAVAX         # verify series name before enabling
+    enabled: false
     scalp:
       entry-price: 0.92
       target-price: 0.97
@@ -179,7 +187,8 @@ assets:
       max-bankroll-pct: 0.10
 
   - id: ltc
-    series: KXLTC
+    series: KXLTC          # verify series name before enabling
+    enabled: false
     scalp:
       entry-price: 0.92
       target-price: 0.97
