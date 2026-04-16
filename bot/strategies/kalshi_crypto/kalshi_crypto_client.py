@@ -158,8 +158,7 @@ class KalshiCryptoClient(KalshiClient):
             candles = resp.json()
             if not candles:
                 return None
-            # Newest first → reverse to oldest-first, then take last `lookback`
-            candles = list(reversed(candles))[-lookback:]
+            candles = list(reversed(candles[:lookback]))
             closes  = [float(c[4]) for c in candles]
             volumes = [float(c[5]) for c in candles]
             return PriceWindow(closes=closes, volumes=volumes)
