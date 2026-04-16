@@ -1,43 +1,27 @@
 """
-KalshiCryptoStrategy — coordinator for the 15-min crypto prediction bot.
+Kalshi BTC 15-min scalp bot.
 
-Architecture:
-  CandleCache      — shared price data, refreshed at cron :25s and :55s
-  SharedState      — account state (balance, positions, bets), refreshed every 5 min
-  WindowManager    — one per enabled asset, manages ContractWindow lifecycle
-  ContractWindow   — one per 15-min time slot, owns phase transitions + order execution
+Strategy: buy YES when ask ≤ 92¢, place limit sell at 97¢.
+Scans Kalshi every 30 seconds. No external price feeds.
 
-Scheduler jobs (all on one shared AsyncIOScheduler):
-  _tick              CronTrigger(second="25,55") — refresh candles, tick all windows
-  _reload_windows    CronTrigger(minute="*/15")  — discover newly-opened windows
-  _refresh_state     IntervalTrigger(seconds=300)— refresh balance/positions from Kalshi
-
-The strategy no longer polls every 30s or checks timestamps in a loop.
-Each ContractWindow is scheduled to its exact lifecycle moments.
-
-Environment variables required:
+Required env vars:
   KALSHI_API_KEY_ID, KALSHI_PRIVATE_KEY
   SUPABASE_URL, SUPABASE_SERVICE_KEY
-  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (optional)
+  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 """
 import asyncio
 import logging
-from typing import Any, Dict
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from dotenv import load_dotenv
 
 from ..base_strategy import TradingStrategy
 from ..registry import StrategyRegistry
 from ..telegram_notifier import TelegramNotifier
-from .candle_cache import CandleCache
-from .config import KalshiCryptoConfig
+from .config import BtcScalpConfig
 from .kalshi_crypto_client import KalshiCryptoClient
-from .shared_state import SharedState
+from .market_state import compute_minutes_remaining
 from .supabase_logger import SupabaseLogger
-from .window_manager import WindowManager
 
 logger = logging.getLogger(__name__)
 
@@ -52,97 +36,56 @@ class KalshiCryptoStrategy(TradingStrategy):
         return "scheduled"
 
     async def initialize(self):
-        self.config = KalshiCryptoConfig.load()
+        self.cfg = BtcScalpConfig.load()
 
-        if not self.config.api_key_id or not self.config.private_key:
-            raise ValueError("KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY are required")
-        if not self.config.supabase_url or not self.config.supabase_key:
-            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_KEY are required")
-        if not self.config.assets:
-            raise ValueError("No assets configured — check kalshi_crypto/config.yml")
+        if not self.cfg.api_key_id or not self.cfg.private_key:
+            raise ValueError("KALSHI_API_KEY_ID and KALSHI_PRIVATE_KEY must be set in .env")
 
         self._client = KalshiCryptoClient(
-            self.config.api_key_id,
-            self.config.private_key,
-            dry_run=self.config.dry_run,
+            self.cfg.api_key_id,
+            self.cfg.private_key,
+            dry_run=self.cfg.dry_run,
         )
-        self._db = SupabaseLogger(self.config.supabase_url, self.config.supabase_key)
-        self._telegram = TelegramNotifier(
-            self.config.telegram_token, self.config.telegram_chat_id
-        )
+
+        # Supabase is optional — if not configured, bet logging is skipped
+        self._db: SupabaseLogger | None = None
+        if self.cfg.supabase_url and self.cfg.supabase_key:
+            self._db = SupabaseLogger(self.cfg.supabase_url, self.cfg.supabase_key)
+        else:
+            logger.warning("Supabase not configured — bet logging disabled")
+
+        self._telegram = TelegramNotifier(self.cfg.telegram_token, self.cfg.telegram_chat_id)
         self._scheduler = AsyncIOScheduler()
 
-        self._shared_state = SharedState()
-        self._candle_cache = CandleCache(client=self._client)
-        self._asset_ids = [a.id for a in self.config.assets]
+        # In-memory set of tickers we've already entered this session
+        # (cleared on restart; Kalshi positions are the source of truth)
+        self._entered: set[str] = set()
 
-        self._managers: list[WindowManager] = [
-            WindowManager(
-                asset_cfg=a,
-                client=self._client,
-                db=self._db,
-                telegram=self._telegram,
-                candle_cache=self._candle_cache,
-                shared_state=self._shared_state,
-                scheduler=self._scheduler,
-            )
-            for a in self.config.assets
-        ]
-
+        dry_tag = " [DRY RUN]" if self.cfg.dry_run else " [LIVE]"
         logger.info(
-            f"KalshiCrypto initialized | assets={self._asset_ids} | "
-            f"dry_run={self.config.dry_run}"
+            f"KalshiCrypto initialized{dry_tag} | "
+            f"series={self.cfg.series} | "
+            f"entry≤{self.cfg.entry_cents}¢ → sell@{self.cfg.target_cents}¢ | "
+            f"contracts={self.cfg.contracts} | "
+            f"scan={self.cfg.scan_interval_seconds}s"
         )
-
-    def is_ready(self) -> bool:
-        return hasattr(self, "_client") and self._client is not None
 
     async def start(self):
-        if not self.is_ready():
-            raise RuntimeError("Strategy not initialized — call initialize() first")
-
-        # Bootstrap: load account state and initial candles before the first tick
-        await self._shared_state.load(self._client, self._db)
-        await self._candle_cache.refresh(self._asset_ids)
-
-        # Discover and register all currently-open windows
-        for manager in self._managers:
-            await manager.reload_windows()
-
-        # Job 1: price refresh + window ticks at :25 and :55 each minute
         self._scheduler.add_job(
-            self._tick,
-            CronTrigger(second="25,55"),
-            id="kalshi_crypto_tick",
-            name="Kalshi Crypto tick",
+            self._scan,
+            IntervalTrigger(seconds=self.cfg.scan_interval_seconds),
+            id="btc_scalp_scan",
+            name="BTC scalp scan",
         )
-        # Job 2: reload market list every 15 min to catch newly-opened windows
-        self._scheduler.add_job(
-            self._reload_windows,
-            CronTrigger(minute="*/15", second=5),
-            id="kalshi_crypto_reload",
-            name="Kalshi Crypto window reload",
-        )
-        # Job 3: reconcile account state (balance, positions, bets) every 5 min
-        self._scheduler.add_job(
-            self._refresh_state,
-            IntervalTrigger(seconds=300),
-            id="kalshi_crypto_state",
-            name="Kalshi Crypto state refresh",
-        )
-
         self._scheduler.start()
         self.is_running = True
+        logger.info(f"KalshiCrypto started — scanning {self.cfg.series} every {self.cfg.scan_interval_seconds}s")
 
-        logger.info(
-            f"KalshiCrypto started | {len(self._managers)} asset(s) | "
-            f"ticks at :25s/:55s | state refresh every 5 min"
-        )
         try:
             while self.is_running:
                 await asyncio.sleep(60)
         except asyncio.CancelledError:
-            logger.info("KalshiCrypto strategy cancelled")
+            pass
 
     async def stop(self):
         self.is_running = False
@@ -150,45 +93,113 @@ class KalshiCryptoStrategy(TradingStrategy):
             self._scheduler.shutdown(wait=False)
         if hasattr(self, "_client"):
             await self._client.close()
-        logger.info(f"KalshiCrypto stopped | stats={self.get_stats()}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict:
         return {
             "strategy": self.get_name(),
-            "dry_run": self.config.dry_run,
-            "managers": [m.get_stats() for m in self._managers]
-            if hasattr(self, "_managers")
-            else [],
+            "series": self.cfg.series,
+            "dry_run": self.cfg.dry_run,
+            "entered_this_session": len(self._entered),
         }
 
-    # ── Scheduler job targets ─────────────────────────────────────────────────
+    # ── Core scan ─────────────────────────────────────────────────────────────
 
-    async def _tick(self) -> None:
+    async def _scan(self):
         """
-        Fires at :25 and :55 each minute.
-        1. Refresh candle cache (concurrent fetch for all assets)
-        2. Tick every WindowManager → drives ContractWindow phase transitions
+        Runs every 30s. Fetches open BTC markets and checks each for entry.
+        Entry condition: yes_ask ≤ entry_cents AND mins_remaining ≥ min_mins_left
+        AND not already in this market.
         """
-        await self._candle_cache.refresh(self._asset_ids)
-        for manager in self._managers:
-            try:
-                await manager.tick()
-            except Exception as e:
-                logger.error(f"Manager tick error ({manager._cfg.id}): {e}", exc_info=True)
+        markets = await self._client.get_markets(self.cfg.series)
+        if not markets:
+            logger.debug(f"No open markets for {self.cfg.series}")
+            return
 
-    async def _reload_windows(self) -> None:
-        """Fires every 15 min. Discovers newly-opened windows."""
-        for manager in self._managers:
-            try:
-                await manager.reload_windows()
-            except Exception as e:
-                logger.error(
-                    f"Window reload error ({manager._cfg.id}): {e}", exc_info=True
-                )
+        # Refresh entered set from actual Kalshi positions once per scan
+        positions = await self._client.get_open_positions()
+        positioned = {p.get("market_ticker") for p in positions}
 
-    async def _refresh_state(self) -> None:
-        """Fires every 5 min. Reconciles account state from Kalshi + Supabase."""
-        await self._shared_state.refresh(self._client, self._db)
+        for market in markets:
+            ticker = market.get("ticker", "")
+            yes_ask = market.get("yes_ask", 100)   # Kalshi returns cents (0–100)
+
+            if not ticker:
+                continue
+            if ticker in positioned or ticker in self._entered:
+                continue
+
+            mins_left = compute_minutes_remaining(market)
+
+            logger.debug(
+                f"{ticker}  YES ask={yes_ask}¢  {mins_left:.1f}m left"
+            )
+
+            if yes_ask > self.cfg.entry_cents:
+                continue
+            if mins_left < self.cfg.min_mins_left:
+                continue
+
+            # ── Entry condition met ───────────────────────────────────────────
+            await self._enter(ticker, yes_ask, mins_left)
+            self._entered.add(ticker)
+
+    async def _enter(self, ticker: str, yes_ask: int, mins_left: float):
+        """Place buy + limit sell orders and notify."""
+        dry_tag = "  <i>[DRY RUN]</i>" if self.cfg.dry_run else ""
+        logger.info(
+            f"[BTC SCALP] {ticker}  YES @ {yes_ask}¢  {mins_left:.1f}m left — entering"
+        )
+
+        # Telegram: signal alert
+        await self._telegram.send(
+            f"<b>[BTC] Scalp Signal{dry_tag}</b>\n"
+            f"Market: {ticker}  ({mins_left:.1f}m left)\n"
+            f"Entry: YES @ <b>{yes_ask}¢</b>  →  target <b>{self.cfg.target_cents}¢</b>\n"
+            f"Contracts: {self.cfg.contracts}  |  cost ~${yes_ask * self.cfg.contracts / 100:.2f}"
+        )
+
+        # Place limit BUY
+        buy = await self._client.place_order(
+            ticker, "yes", self.cfg.contracts, yes_ask, action="buy"
+        )
+        if not buy:
+            logger.error(f"Buy order failed for {ticker}")
+            return
+
+        buy_id = buy.get("order_id", "")
+
+        # Place limit SELL at target (resting order, auto-exits at profit)
+        sell = await self._client.place_order(
+            ticker, "yes", self.cfg.contracts, self.cfg.target_cents, action="sell"
+        )
+        sell_id = sell.get("order_id", "") if sell else "failed"
+
+        logger.info(
+            f"[BTC SCALP] Orders placed — buy={buy_id}  sell={sell_id}"
+        )
+
+        # Telegram: execution confirmation
+        await self._telegram.send(
+            f"<b>[BTC] Orders Placed{dry_tag}</b>\n"
+            f"BUY  YES ×{self.cfg.contracts} @ {yes_ask}¢  →  {buy_id}\n"
+            f"SELL YES ×{self.cfg.contracts} @ {self.cfg.target_cents}¢  →  {sell_id}"
+        )
+
+        # Supabase: log the bet (if configured)
+        if self._db:
+            from .models import CryptoBet
+            bet = CryptoBet(
+                asset_id="btc",
+                strategy="scalp",
+                market_ticker=ticker,
+                side="yes",
+                contracts=self.cfg.contracts,
+                price_per_contract=yes_ask / 100.0,
+                total_cost=round(yes_ask * self.cfg.contracts / 100.0, 2),
+                kalshi_order_id=buy_id,
+                status="open",
+            )
+            await self._db.log_bet(bet)
 
 
 StrategyRegistry.register("kalshi-crypto", KalshiCryptoStrategy)
