@@ -2,6 +2,16 @@ from dataclasses import dataclass
 
 
 @dataclass
+class CryptoJobConfig:
+    series: str
+    floor_cents: int
+    entry_cents: int
+    target_cents: int
+    stop_loss_cents: int
+    contracts: int
+
+
+@dataclass
 class BtcScalpConfig:
     api_key_id: str = ''
     private_key: str = ''

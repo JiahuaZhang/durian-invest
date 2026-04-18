@@ -1,12 +1,14 @@
 """
 KalshiCryptoClient — thin extension of KalshiClient for crypto markets.
-Adds: get_markets, cancel_order, and sell-side order support.
-No price feeds — Kalshi orderbook only.
+
+Adds get_markets() with two normalizations the base client doesn't need:
+  1. Filters out markets where open_time is in the future (status="initialized"
+     markets Kalshi incorrectly returns for status=open queries).
+  2. Derives yes_ask/yes_bid/no_ask/no_bid integer-cent fields from the
+     yes_ask_dollars/... dollar-string fields the v2 API actually returns.
 """
-import json
 import logging
-import time
-from typing import Optional
+from datetime import datetime, timezone
 
 from ..kalshi_client import KalshiClient, PROD_BASE_URL, DEMO_BASE_URL
 
@@ -21,7 +23,17 @@ class KalshiCryptoClient(KalshiClient):
         super().__init__(api_key_id, private_key, dry_run=False, base_url=base_url)
 
     async def get_markets(self, series_ticker: str, limit: int = 50) -> list[dict]:
-        """Fetch open markets for a series. Public endpoint — no auth required."""
+        """
+        Fetch currently-trading markets for a series.
+
+        Kalshi's status=open query also returns status=initialized markets whose
+        open_time is in the future — those are pre-created but not yet live.
+        We drop them here so the strategy only sees markets with an active book.
+
+        Prices in the v2 API come as dollar strings (yes_ask_dollars="0.9200").
+        We add yes_ask/yes_bid/no_ask/no_bid as integer cents so the rest of the
+        code doesn't have to know about the wire format.
+        """
         path = "/markets"
         try:
             resp = await self._client.get(
@@ -29,54 +41,39 @@ class KalshiCryptoClient(KalshiClient):
                 params={"status": "open", "series_ticker": series_ticker, "limit": limit},
             )
             resp.raise_for_status()
-            return resp.json().get("markets", [])
+            raw = resp.json().get("markets", [])
         except Exception as e:
             logger.error(f"Failed to fetch markets for {series_ticker}: {e}")
             return []
 
-    async def place_order(
-        self,
-        ticker: str,
-        side: str,          # 'yes' | 'no'
-        contracts: int,
-        price_cents: int,   # limit price 1–99
-        action: str = "buy",  # 'buy' | 'sell'
-    ) -> Optional[dict]:
-        """Place a limit order. Supports both buy and sell actions."""
-        if self.dry_run:
-            logger.info(
-                f"[DRY RUN] {action.upper()} {side.upper()} {contracts}x {ticker} @ {price_cents}¢"
-            )
-            return {"order_id": f"dry-run-{int(time.time())}", "status": "dry_run"}
+        now = datetime.now(timezone.utc)
+        result = []
+        for m in raw:
+            open_time_raw = m.get("open_time", "")
+            if open_time_raw:
+                try:
+                    if datetime.fromisoformat(open_time_raw.replace("Z", "+00:00")) > now:
+                        continue
+                except Exception:
+                    pass
+            result.append(self._normalize(m))
 
-        path = "/portfolio/orders"
-        body = {
-            "ticker": ticker,
-            "client_order_id": f"btc-{int(time.time() * 1000)}",
-            "type": "limit",
-            "action": action,
-            "side": side,
-            "count": contracts,
-            "yes_price" if side == "yes" else "no_price": price_cents,
-        }
-        headers = self._sign("POST", path)
-        try:
-            resp = await self._client.post(path, content=json.dumps(body), headers=headers)
-            resp.raise_for_status()
-            return resp.json().get("order")
-        except Exception as e:
-            logger.error(f"Order {action} {side} failed for {ticker}: {e}")
-            return None
+        return result
 
-    async def cancel_order(self, order_id: str) -> bool:
-        if self.dry_run:
-            logger.info(f"[DRY RUN] Would cancel order {order_id}")
-            return True
-        path = f"/portfolio/orders/{order_id}"
-        headers = self._sign("DELETE", path)
-        try:
-            resp = await self._client.delete(path, headers=headers)
-            return resp.status_code == 200
-        except Exception as e:
-            logger.error(f"Failed to cancel order {order_id}: {e}")
-            return False
+    async def get_market(self, ticker: str):
+        m = await super().get_market(ticker)
+        return self._normalize(m) if m else None
+
+    @staticmethod
+    def _normalize(m: dict) -> dict:
+        """Derive yes_ask/yes_bid/no_ask/no_bid integer-cent fields from dollar strings."""
+        for side in ("yes", "no"):
+            for action in ("ask", "bid"):
+                dollars_key = f"{side}_{action}_dollars"
+                cents_key = f"{side}_{action}"
+                if dollars_key in m and cents_key not in m:
+                    try:
+                        m[cents_key] = round(float(m[dollars_key]) * 100)
+                    except (ValueError, TypeError):
+                        m[cents_key] = 100 if action == "ask" else 0
+        return m
