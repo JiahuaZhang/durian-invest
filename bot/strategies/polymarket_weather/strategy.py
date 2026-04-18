@@ -24,7 +24,7 @@ from dotenv import load_dotenv
 
 from ..base_strategy import TradingStrategy
 from ..registry import StrategyRegistry
-from .kalshi_client import KalshiClient
+from .kalshi_client import WeatherKalshiClient
 from .models import WeatherBet, WeatherSignal
 from .supabase_logger import SupabaseLogger
 from .weather_client import WeatherClient
@@ -239,7 +239,7 @@ class WeatherArbStrategy(TradingStrategy):
         self._max_bet_usd = float(os.getenv("KALSHI_MAX_BET_USD", "5.0"))
         self._edge_threshold = float(os.getenv("KALSHI_EDGE_THRESHOLD", "0.15"))
 
-        self._kalshi = KalshiClient(kalshi_key_id, kalshi_private_key, dry_run=dry_run)
+        self._kalshi = WeatherKalshiClient(kalshi_key_id, kalshi_private_key, dry_run=dry_run)
         self._weather = WeatherClient()
         self._db = SupabaseLogger(supabase_url, supabase_key)
         self._scheduler = AsyncIOScheduler()

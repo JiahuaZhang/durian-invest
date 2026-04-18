@@ -8,12 +8,17 @@ import logging
 import time
 from typing import Optional
 
-from ..polymarket_weather.kalshi_client import KalshiClient
+from ..kalshi_client import KalshiClient, PROD_BASE_URL, DEMO_BASE_URL
 
 logger = logging.getLogger(__name__)
 
 
 class KalshiCryptoClient(KalshiClient):
+    def __init__(self, api_key_id: str, private_key: str, use_demo: bool = False):
+        base_url = DEMO_BASE_URL if use_demo else PROD_BASE_URL
+        env_tag = "DEMO" if use_demo else "PROD"
+        logger.info(f"KalshiCryptoClient connecting to {env_tag}: {base_url}")
+        super().__init__(api_key_id, private_key, dry_run=False, base_url=base_url)
 
     async def get_markets(self, series_ticker: str, limit: int = 50) -> list[dict]:
         """Fetch open markets for a series. Public endpoint — no auth required."""

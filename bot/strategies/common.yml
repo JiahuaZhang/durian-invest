@@ -23,3 +23,9 @@ supabase:
 telegram:
   token: ${TELEGRAM_BOT_TOKEN}
   chat-id: ${TELEGRAM_CHAT_ID}
+
+kalshi:
+  api-key-id: ${KALSHI_API_KEY_ID}
+  private-key: ${KALSHI_PRIVATE_KEY}
+  demo-api-key-id: ${KALSHI_DEMO_KEY_ID}
+  demo-private-key: ${KALSHI_DEMO_PRIVATE_KEY}

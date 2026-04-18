@@ -11,15 +11,17 @@
 name: kalshi-crypto
 
 kalshi:
-  api-key-id: ${KALSHI_API_KEY_ID}
-  private-key: ${KALSHI_PRIVATE_KEY}
-  dry-run: true   # set to false for live trading
+  use-demo: true
+  # Credentials are loaded from .env automatically based on use-demo:
+  #   use-demo: false  →  KALSHI_API_KEY_ID + KALSHI_PRIVATE_KEY       (production)
+  #   use-demo: true   →  KALSHI_DEMO_KEY_ID + KALSHI_DEMO_PRIVATE_KEY (demo.kalshi.co)
 
 series: KXBTC15M
-scan-interval-seconds: 30
+scan-interval-seconds: 2
 
 scalp:
-  entry-cents: 92       # buy YES when ask ≤ this
-  target-cents: 97      # place limit sell at this price
+  floor-cents: 85       # only enter when ask ≥ this (avoids low-prob markets)
+  entry-cents: 92       # only enter when ask ≤ this (the "92¢ conviction zone")
+  target-cents: 97      # place resting limit sell at this price
+  stop-loss-cents: 88   # exit if bid drops to or below this after entry
   contracts: 1          # contracts per trade
-  min-mins-left: 1.0    # skip markets closing in < 1 minutes
