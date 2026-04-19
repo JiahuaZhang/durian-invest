@@ -4,11 +4,10 @@ from dataclasses import dataclass
 @dataclass
 class CryptoJobConfig:
     series: str
-    floor_cents: int
     entry_cents: int
     target_cents: int
     stop_loss_cents: int
-    contracts: int
+    count: int
 
 
 @dataclass
@@ -17,11 +16,11 @@ class BtcScalpConfig:
     private_key: str = ''
     use_demo: bool = False
     series: str = 'KXBTC15M'
-    floor_cents: int = 85
     entry_cents: int = 92
     target_cents: int = 97
     stop_loss_cents: int = 88
-    contracts: int = 1
+    count: int = 1
+    subaccount: int = 0
     scan_interval_seconds: int = 30
     supabase_url: str = ''
     supabase_key: str = ''
@@ -52,11 +51,11 @@ class BtcScalpConfig:
             private_key=private_key,
             use_demo=use_demo,
             series=c.get('series', 'KXBTC15M'),
-            floor_cents=int(scalp.get('floor-cents', 85)),
             entry_cents=int(scalp.get('entry-cents', 92)),
             target_cents=int(scalp.get('target-cents', 97)),
             stop_loss_cents=int(scalp.get('stop-loss-cents', 88)),
-            contracts=int(scalp.get('contracts', 1)),
+            count=int(scalp.get('count', 1)),
+            subaccount=int(scalp.get('subaccount', 0)),
             scan_interval_seconds=int(c.get('scan-interval-seconds', 30)),
             supabase_url=supabase.get('url', ''),
             supabase_key=supabase.get('service-key', ''),

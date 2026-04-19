@@ -3,6 +3,8 @@ import sys
 import signal
 import asyncio
 import logging
+import datetime
+import zoneinfo
 from typing import List
 from dotenv import load_dotenv
 
@@ -10,11 +12,18 @@ from strategies import StrategyRegistry, TradingStrategy, load_strategy_module
 
 load_dotenv()
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+_EASTERN = zoneinfo.ZoneInfo('America/New_York')
+
+class _EasternFormatter(logging.Formatter):
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.datetime.fromtimestamp(record.created, tz=_EASTERN)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.strftime('%Y-%m-%d %H:%M:%S') + f',{int(record.msecs):03d} ET'
+
+_handler = logging.StreamHandler(sys.stdout)
+_handler.setFormatter(_EasternFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logging.basicConfig(level=logging.INFO, handlers=[_handler])
 logger = logging.getLogger(__name__)
 
 

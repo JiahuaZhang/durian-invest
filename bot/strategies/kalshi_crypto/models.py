@@ -61,7 +61,7 @@ class CryptoBet:
     strategy: str = ''
     market_ticker: str = ''
     side: str = ''               # 'yes' | 'no'
-    contracts: int = 0
+    count: int = 0
     price_per_contract: float = 0.0
     total_cost: float = 0.0
     kalshi_order_id: str = ''

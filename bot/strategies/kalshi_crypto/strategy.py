@@ -54,6 +54,7 @@ class KalshiCryptoStrategy(TradingStrategy):
         self._client = KalshiCryptoClient(
             self.cfg.api_key_id,
             self.cfg.private_key,
+            subaccount=self.cfg.subaccount,
             use_demo=self.cfg.use_demo,
         )
 
@@ -68,11 +69,10 @@ class KalshiCryptoStrategy(TradingStrategy):
 
         job_cfg = CryptoJobConfig(
             series=self.cfg.series,
-            floor_cents=self.cfg.floor_cents,
             entry_cents=self.cfg.entry_cents,
             target_cents=self.cfg.target_cents,
             stop_loss_cents=self.cfg.stop_loss_cents,
-            contracts=self.cfg.contracts,
+            count=self.cfg.count,
         )
         self._jobs: list[Crypto15mJob] = [
             Crypto15mJob(job_cfg, self._client, self._db, self._telegram, self.cfg.use_demo),
@@ -82,9 +82,9 @@ class KalshiCryptoStrategy(TradingStrategy):
         logger.info(
             f"KalshiCrypto initialized {env_tag} | "
             f"series={self.cfg.series} | "
-            f"entry {self.cfg.floor_cents}-{self.cfg.entry_cents}¢ → "
+            f"entry {self.cfg.entry_cents}¢ → "
             f"sell@{self.cfg.target_cents}¢ stop@{self.cfg.stop_loss_cents}¢ | "
-            f"contracts={self.cfg.contracts} | "
+            f"count={self.cfg.count} | "
             f"schedule=:00/:15/:30/:45"
         )
 

@@ -20,8 +20,8 @@ series: KXBTC15M
 scan-interval-seconds: 2
 
 scalp:
-  floor-cents: 85       # only enter when ask ≥ this (avoids low-prob markets)
   entry-cents: 92       # only enter when ask ≤ this (the "92¢ conviction zone")
   target-cents: 97      # place resting limit sell at this price
   stop-loss-cents: 88   # exit if bid drops to or below this after entry
-  contracts: 1          # contracts per trade
+  count: 1          # contracts per trade
+  subaccount: 1         # 0 = primary account; 1-32 = subaccount number (fill in after creating)
