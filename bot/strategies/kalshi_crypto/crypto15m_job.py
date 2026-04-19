@@ -90,6 +90,8 @@ class Crypto15mJob:
         yes_in_zone = yes_ask >= self.cfg.entry_cents and yes_ask <= self.cfg.target_cents
         no_in_zone  = no_ask  >= self.cfg.entry_cents and no_ask <= self.cfg.target_cents
 
+        logger.info(f"[{ticker}] yes_bid={yes_bid}¢ yes_ask={yes_ask}¢ no_bid={no_bid}¢ no_ask={no_ask}¢ yes_in_zone={yes_in_zone} no_in_zone={no_in_zone}")
+
         if yes_in_zone or no_in_zone:
             side_label = f"YES={yes_ask}¢ IN ZONE" if yes_in_zone else f"NO={no_ask}¢ IN ZONE"
             logger.info(

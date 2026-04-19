@@ -208,7 +208,7 @@ class KalshiClient:
         path = "/portfolio/subaccounts"
         headers = self._sign("POST", path)
         try:
-            resp = await self._client.post(path, content="{}", headers=headers)
+            resp = await self._client.post(path, headers=headers)
             resp.raise_for_status()
             number = resp.json().get("subaccount_number")
             logger.info(f"Created subaccount #{number}")
