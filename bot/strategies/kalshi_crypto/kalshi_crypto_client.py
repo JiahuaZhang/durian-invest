@@ -10,7 +10,7 @@ Adds get_markets() with two normalizations the base client doesn't need:
 import logging
 from datetime import datetime, timezone
 
-from ..kalshi_client import KalshiClient, PROD_BASE_URL, DEMO_BASE_URL
+from strategies.kalshi_client import KalshiClient, PROD_BASE_URL, DEMO_BASE_URL
 
 logger = logging.getLogger(__name__)
 

@@ -2,12 +2,12 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from ..telegram_notifier import TelegramNotifier
-from .config import CryptoJobConfig
-from .kalshi_crypto_client import KalshiCryptoClient
-from .market_state import current_market_ticker
-from .supabase_logger import SupabaseLogger
-from ..util import convert_utc_to_ny
+from strategies.telegram_notifier import TelegramNotifier
+from strategies.kalshi_crypto.config import CryptoJobConfig
+from strategies.kalshi_crypto.kalshi_crypto_client import KalshiCryptoClient
+from strategies.kalshi_crypto.market_state import current_market_ticker
+from strategies.kalshi_crypto.supabase_logger import SupabaseLogger
+from strategies.util import convert_utc_to_ny
 
 logger = logging.getLogger(__name__)
 
@@ -82,10 +82,10 @@ class Crypto15mJob:
 
         market = await self._client.get_market(ticker)
 
-        yes_ask = market.get("yes_ask_dollars")
-        yes_bid = market.get("yes_bid_dollars")
-        no_ask  = market.get("no_ask_dollars")
-        no_bid  = market.get("no_bid_dollars")
+        yes_ask = float(market.get("yes_ask_dollars")) * 100
+        yes_bid = float(market.get("yes_bid_dollars")) * 100
+        no_ask  = float(market.get("no_ask_dollars")) * 100
+        no_bid  = float(market.get("no_bid_dollars")) * 100
 
         yes_in_zone = yes_ask >= self.cfg.entry_cents and yes_ask <= self.cfg.target_cents
         no_in_zone  = no_ask  >= self.cfg.entry_cents and no_ask <= self.cfg.target_cents
@@ -107,14 +107,14 @@ class Crypto15mJob:
                 f"(want {self.cfg.entry_cents}¢)"
             )
 
-    async def _enter(self, ticker: str, side: str, ask_price: str, secs_left: float):
+    async def _enter(self, ticker: str, side: str, ask_price: float, secs_left: float):
         logger.info(f"[{ticker}] {side.upper()} @ {ask_price}¢ {secs_left:.0f}s left — entering")
 
         buy = None
         if side == 'yes':
-            buy =  await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, yes_price_dollars=ask_price)
+            buy =  await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, yes_price=ask_price)
         else:
-            buy = await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, no_price_dollars=ask_price)
+            buy = await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, no_price=ask_price)
         if not buy:
             logger.error(f"Buy order failed for {ticker} {side}")
             return
@@ -138,15 +138,15 @@ class Crypto15mJob:
         }
         await self.take_profit_leave(ticker, side, ask_price)
 
-    async def take_profit_leave(self, ticker: str, side: str, start_price: str):
+    async def take_profit_leave(self, ticker: str, side: str, start_price: float):
         env_tag = "[DEMO]" if self._use_demo else "[LIVE]"
-        take_profit_price = f'{min(float(start_price) + 0.05, 0.99):.2f}'
+        take_profit_price = min(start_price + 0.05, 0.99)
 
         sell = None
         if side == 'yes':
-            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, yes_price_dollars=take_profit_price)
+            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, yes_price=take_profit_price)
         else:
-            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, no_price_dollars=take_profit_price)
+            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, no_price=take_profit_price)
 
         if sell.get("status") == "executed":
             self._telegram.send(f"✅Take profit {ticker} {side} @ {take_profit_price}¢ [{sell.get('order_id')}] on {convert_utc_to_ny(sell.get('created_time'))}")
@@ -161,7 +161,7 @@ class Crypto15mJob:
             f"Take profit order placed @ {convert_utc_to_ny(sell.get('created_time'))}\n"
         )
 
-        stop_loss_price = f'{float(start_price) - 0.05:.2f}'
+        stop_loss_price = start_price - 0.05
         self._active_trade = {
             "side": side,
             "status": "sell_resting",
@@ -208,9 +208,9 @@ class Crypto15mJob:
         exit_price = self._active_trade.get("stop_loss_price")
         stop_sell = None
         if side == 'yes':
-            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.contracts, yes_price_dollars=exit_price)
+            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.contracts, yes_price=exit_price)
         else:
-            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.contracts, no_price_dollars=exit_price)
+            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.contracts, no_price=exit_price)
 
         if stop_sell.get("status") == "executed":
             self._telegram.send(f"❌Take profit {ticker} {self._active_trade['side']} @ {self._active_trade['entry_price']}¢ [{sell_order.get('order_id')}] on {convert_utc_to_ny(sell_order.get('created_time'))}")

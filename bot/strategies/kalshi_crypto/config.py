@@ -14,6 +14,7 @@ class CryptoJobConfig:
 class BtcScalpConfig:
     api_key_id: str = ''
     private_key: str = ''
+    enabled: bool = False
     use_demo: bool = False
     series: str = 'KXBTC15M'
     entry_cents: int = 92
@@ -49,6 +50,7 @@ class BtcScalpConfig:
         return cls(
             api_key_id=api_key_id,
             private_key=private_key,
+            enabled=str(c.get('enabled', 'false')).lower() == 'true',
             use_demo=use_demo,
             series=c.get('series', 'KXBTC15M'),
             entry_cents=int(scalp.get('entry-cents', 92)),

@@ -9,6 +9,7 @@
 #   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 
 name: kalshi-crypto
+enabled: true
 
 kalshi:
   use-demo: true

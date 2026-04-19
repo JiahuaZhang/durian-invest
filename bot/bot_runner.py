@@ -1,6 +1,4 @@
-import os
 import sys
-import signal
 import asyncio
 import logging
 import datetime
@@ -8,7 +6,8 @@ import zoneinfo
 from typing import List
 from dotenv import load_dotenv
 
-from strategies import StrategyRegistry, TradingStrategy, load_strategy_module
+from strategies.base_strategy import TradingStrategy
+from strategies.kalshi_crypto.strategy import KalshiCryptoStrategy
 
 load_dotenv()
 
@@ -28,105 +27,68 @@ logger = logging.getLogger(__name__)
 
 
 class BotRunner:
-    def __init__(self, strategy_names: List[str]):
-        self.strategy_names = strategy_names
-        self.strategies: List[TradingStrategy] = []
+    def __init__(self, strategies: List[TradingStrategy]):
+        self.strategies = strategies
         self.shutdown_event = asyncio.Event()
-        
+
         logger.info("=" * 70)
-        logger.info("🚀 DURIAN INVEST - MULTI-STRATEGY BOT")
+        logger.info("DURIAN INVEST - MULTI-STRATEGY BOT")
         logger.info("=" * 70)
-        logger.info(f"Strategies to load: {', '.join(strategy_names)}")
-    
-    async def load_strategies(self):
-        for name in self.strategy_names:
-            try:
-                strategy = StrategyRegistry.create(name)
-                await strategy.initialize()
-                self.strategies.append(strategy)
-                logger.info(f"✅ Loaded strategy: {name} ({strategy.get_type()})")
-            except Exception as e:
-                logger.error(f"❌ Failed to load strategy '{name}': {e}")
-                sys.exit(1)
-        logger.info(f"\n✅ All {len(self.strategies)} strategies loaded successfully")
-    
+        for s in strategies:
+            logger.info(f"  - {s.get_name()} ({s.get_type()})")
+
     async def run(self):
-        if not self.strategies:
-            logger.error("No strategies loaded!")
-            return
-        
-        logger.info("\n" + "=" * 70)
-        logger.info("▶️  STARTING ALL STRATEGIES")
-        logger.info("=" * 70)
-        
-        tasks = [strategy.start() for strategy in self.strategies]
+        tasks = [s.start() for s in self.strategies]
         tasks.append(self._wait_for_shutdown())
-        
         try:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError:
-            logger.info("\n🛑 Shutdown initiated...")
-    
+            pass
+
     async def _wait_for_shutdown(self):
         await self.shutdown_event.wait()
-        await self.shutdown()
-    
-    async def shutdown(self):
-        logger.info("\n" + "=" * 70)
-        logger.info("🛑 SHUTTING DOWN")
-        logger.info("=" * 70)
-        
+        await self._shutdown()
+
+    async def _shutdown(self):
+        logger.info("Shutting down...")
         self.shutdown_event.set()
-        
-        for strategy in self.strategies:
+        for s in self.strategies:
             try:
-                logger.info(f"Stopping {strategy.get_name()}...")
-                await strategy.stop()
+                await s.stop()
             except Exception as e:
-                logger.error(f"Error stopping {strategy.get_name()}: {e}")
-        
-        logger.info("✅ All strategies stopped")
-        logger.info("=" * 70)
+                logger.error(f"Error stopping {s.get_name()}: {e}")
+        logger.info("All strategies stopped")
 
 
 async def main():
-    strategies_env = os.getenv('STRATEGIES', 'kalshi-crypto')
-    strategy_names = [s.strip() for s in strategies_env.split(',')]
-    logger.info(f"Strategies to load: {strategy_names}")
+    all_classes = [KalshiCryptoStrategy]
 
-    for name in strategy_names:
-        load_strategy_module(name)
-
-    for name in strategy_names:
-        if not StrategyRegistry.is_registered(name):
-            available = ', '.join(StrategyRegistry.list_strategies())
-            logger.error(f"❌ Unknown strategy: '{name}'")
-            logger.error(f"Available strategies: {available}")
+    enabled = []
+    for cls in all_classes:
+        try:
+            s = cls()
+        except Exception as e:
+            logger.error(f"Failed to initialize {cls.__name__}: {e}")
             sys.exit(1)
-    
-    bot = BotRunner(strategy_names)
-    
-    if sys.platform != 'win32':
-        loop = asyncio.get_event_loop()
-        
-        def signal_handler():
-            logger.info("\n🛑 Received shutdown signal (Ctrl+C)")
-            asyncio.create_task(bot.shutdown())
-        
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            loop.add_signal_handler(sig, signal_handler)
-    
-    await bot.load_strategies()
-    
+        if not s.is_enabled():
+            logger.info(f"Skipping disabled strategy: {s.get_name()}")
+            continue
+        enabled.append(s)
+
+    if not enabled:
+        logger.info("No strategies enabled. Set 'enabled: true' in strategy config.")
+        return
+
+    bot = BotRunner(enabled)
+
     try:
         await bot.run()
     except KeyboardInterrupt:
-        logger.info("\n🛑 Received keyboard interrupt")
-        await bot.shutdown()
+        await bot._shutdown()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("\n✅ Bot stopped")
+        logger.info("Bot stopped")

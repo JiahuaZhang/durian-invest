@@ -50,18 +50,6 @@ class TradingStrategy(ABC):
         pass
     
     @abstractmethod
-    async def initialize(self):
-        """
-        Initialize strategy with its own trading client and configuration.
-        
-        Strategies should:
-        - Load their own environment variables
-        - Create their own trading client(s)
-        - Set up any required resources
-        """
-        pass
-    
-    @abstractmethod
     async def start(self):
         """
         Start the strategy execution.
@@ -90,6 +78,9 @@ class TradingStrategy(ABC):
         """
         pass
     
+    def is_enabled(self) -> bool:
+        return True
+
     def is_ready(self) -> bool:
         """
         Check if strategy is ready to start.

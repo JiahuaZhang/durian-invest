@@ -18,29 +18,20 @@ import asyncio
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from dotenv import load_dotenv
 
-from ..base_strategy import TradingStrategy
-from ..registry import StrategyRegistry
-from ..telegram_notifier import TelegramNotifier
-from .config import BtcScalpConfig, CryptoJobConfig
-from .crypto15m_job import Crypto15mJob
-from .kalshi_crypto_client import KalshiCryptoClient
-from .supabase_logger import SupabaseLogger
+from strategies.base_strategy import TradingStrategy
+from strategies.telegram_notifier import TelegramNotifier
+from strategies.kalshi_crypto.config import BtcScalpConfig, CryptoJobConfig
+from strategies.kalshi_crypto.crypto15m_job import Crypto15mJob
+from strategies.kalshi_crypto.kalshi_crypto_client import KalshiCryptoClient
+from strategies.kalshi_crypto.supabase_logger import SupabaseLogger
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
-
 
 class KalshiCryptoStrategy(TradingStrategy):
-    def get_name(self) -> str:
-        return "kalshi-crypto"
-
-    def get_type(self) -> str:
-        return "scheduled"
-
-    async def initialize(self):
+    def __init__(self):
+        super().__init__()
         self.cfg = BtcScalpConfig.load()
 
         if not self.cfg.api_key_id or not self.cfg.private_key:
@@ -88,6 +79,12 @@ class KalshiCryptoStrategy(TradingStrategy):
             f"schedule=:00/:15/:30/:45"
         )
 
+    def get_name(self) -> str:
+        return "kalshi-crypto"
+
+    def get_type(self) -> str:
+        return "scheduled"
+
     async def start(self):
         for job in self._jobs:
             self._scheduler.add_job(
@@ -104,7 +101,7 @@ class KalshiCryptoStrategy(TradingStrategy):
 
         try:
             while self.is_running:
-                await asyncio.sleep(60)
+                await asyncio.sleep(86400)
         except asyncio.CancelledError:
             pass
 
@@ -126,4 +123,16 @@ class KalshiCryptoStrategy(TradingStrategy):
         }
 
 
-StrategyRegistry.register("kalshi-crypto", KalshiCryptoStrategy)
+    def is_enabled(self) -> bool:
+        return self.cfg.enabled
+
+
+if __name__ == "__main__":
+    async def _run():
+        s = KalshiCryptoStrategy()
+        await s.start()
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        print("\nStopped")
