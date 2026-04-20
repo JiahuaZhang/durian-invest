@@ -42,9 +42,9 @@ class CryptoSignal:
     strategy: str = ''           # 'scalp' | 'reversal' | 'market_maker'
     action: str = 'SKIP'         # 'BUY_YES' | 'BUY_BOTH' | 'SKIP'
     market_ticker: str = ''
-    entry_price: float = 0.0     # YES ask price at signal time (0–1 scale)
-    target_price: Optional[float] = None
-    stop_price: Optional[float] = None
+    entry_dollars: float = 0.0     # YES ask price at signal time (0–1 scale)
+    target_dollars: Optional[float] = None
+    stop_loss_dollars: Optional[float] = None
     edge: float = 0.0
     spot_price: float = 0.0      # Underlying asset price from Kraken
     vol_15m: float = 0.0         # Realized vol at signal time

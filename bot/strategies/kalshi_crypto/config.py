@@ -4,9 +4,9 @@ from dataclasses import dataclass
 @dataclass
 class CryptoJobConfig:
     series: str
-    entry_cents: int
-    target_cents: int
-    stop_loss_cents: int
+    entry_dollars: float
+    target_dollars: float
+    stop_loss_dollars: float
     count: int
 
 
@@ -17,9 +17,9 @@ class BtcScalpConfig:
     enabled: bool = False
     use_demo: bool = False
     series: str = 'KXBTC15M'
-    entry_cents: int = 92
-    target_cents: int = 97
-    stop_loss_cents: int = 88
+    entry_dollars: float = 0.92
+    target_dollars: float = 0.97
+    stop_loss_dollars: float = 0.88
     count: int = 1
     subaccount: int = 0
     scan_interval_seconds: int = 30
@@ -53,9 +53,9 @@ class BtcScalpConfig:
             enabled=str(c.get('enabled', 'false')).lower() == 'true',
             use_demo=use_demo,
             series=c.get('series', 'KXBTC15M'),
-            entry_cents=int(scalp.get('entry-cents', 92)),
-            target_cents=int(scalp.get('target-cents', 97)),
-            stop_loss_cents=int(scalp.get('stop-loss-cents', 88)),
+            entry_dollars=float(scalp.get('entry-dollars', 0.92)),
+            target_dollars=float(scalp.get('target-dollars', 0.97)),
+            stop_loss_dollars=float(scalp.get('stop-loss-dollars', 0.88)),
             count=int(scalp.get('count', 1)),
             subaccount=int(scalp.get('subaccount', 0)),
             scan_interval_seconds=int(c.get('scan-interval-seconds', 30)),

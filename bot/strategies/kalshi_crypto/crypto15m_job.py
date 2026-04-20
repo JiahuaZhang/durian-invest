@@ -11,7 +11,7 @@ from strategies.util import convert_utc_to_ny
 
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL = 2  # seconds between order-book checks
+POLL_INTERVAL = 1  # seconds between order-book checks
 
 
 class Crypto15mJob:
@@ -48,6 +48,7 @@ class Crypto15mJob:
         now = datetime.now(timezone.utc)
         ticker, close_time = current_market_ticker(self.cfg.series, now)
         secs_left = (close_time - now).total_seconds()
+        start_balance = await self._client.get_balance()
 
         logger.info(f"[{ticker}] — polling every {POLL_INTERVAL}s for {secs_left:.0f}s")
 
@@ -55,13 +56,18 @@ class Crypto15mJob:
             now = datetime.now(timezone.utc)
             secs_left = (close_time - now).total_seconds()
 
-            if secs_left < POLL_INTERVAL:
+            if secs_left < POLL_INTERVAL + 1:
                 logger.info(f"[{ticker}] window closing — exiting poll loop")
                 break
 
             await self._tick(ticker, secs_left)
 
             await asyncio.sleep(POLL_INTERVAL)
+
+        end_balance = await self._client.get_balance()
+        profit = end_balance - start_balance
+        logger.info(f"[{ticker}] {start_balance} → {end_balance} Profit: ${profit:.2f}")
+        await self._telegram.send(f"💰 [{ticker}] {start_balance} → {end_balance} Profit: ${profit:.2f}")
 
     async def _tick(self, ticker: str, secs_left: float):
         """
@@ -73,30 +79,27 @@ class Crypto15mJob:
         if self._active_trade:
             await self.handle_exist_trade(ticker)
             return
-            # market = await self._client.get_market(ticker)
-            # side = self._active_trade["side"]
-            # current_bid = float(market.get(f"{side}_bid_dollars"))
-            # if current_bid > 0 and current_bid <= self._active_trade["stop_loss_price"]:
-            #     await self._stop_loss_exit(ticker, self._active_trade, current_bid)
-            # return
 
         market = await self._client.get_market(ticker)
 
-        yes_ask = float(market.get("yes_ask_dollars")) * 100
-        yes_bid = float(market.get("yes_bid_dollars")) * 100
-        no_ask  = float(market.get("no_ask_dollars")) * 100
-        no_bid  = float(market.get("no_bid_dollars")) * 100
+        yes_ask = market.get("yes_ask_dollars")
+        yes_bid = market.get("yes_bid_dollars")
+        no_ask  = market.get("no_ask_dollars")
+        no_bid  = market.get("no_bid_dollars")
 
-        yes_in_zone = yes_ask >= self.cfg.entry_cents and yes_ask <= self.cfg.target_cents
-        no_in_zone  = no_ask  >= self.cfg.entry_cents and no_ask <= self.cfg.target_cents
+        yes_price = float(yes_ask)
+        no_price = float(no_ask)
 
-        logger.info(f"[{ticker}] yes_bid={yes_bid}¢ yes_ask={yes_ask}¢ no_bid={no_bid}¢ no_ask={no_ask}¢ yes_in_zone={yes_in_zone} no_in_zone={no_in_zone}")
+        yes_in_zone = yes_price >= self.cfg.entry_dollars and yes_price <= self.cfg.target_dollars
+        no_in_zone  = no_price  >= self.cfg.entry_dollars and no_price <= self.cfg.target_dollars
+
+        logger.info(f"[{ticker}] yes_bid={yes_bid}$ yes_ask={yes_ask}$ no_bid={no_bid}$ no_ask={no_ask}$ yes_in_zone={yes_in_zone} no_in_zone={no_in_zone}")
 
         if yes_in_zone or no_in_zone:
-            side_label = f"YES={yes_ask}¢ IN ZONE" if yes_in_zone else f"NO={no_ask}¢ IN ZONE"
+            side_label = f"YES={yes_ask}$ IN ZONE" if yes_in_zone else f"NO={no_ask}$ IN ZONE"
             logger.info(
-                f"{ticker}  YES bid={yes_bid}¢ ask={yes_ask}¢  "
-                f"NO bid={no_bid}¢ ask={no_ask}¢  "
+                f"{ticker}  YES bid={yes_bid}$ ask={yes_ask}$  "
+                f"NO bid={no_bid}$ ask={no_ask}$  "
                 f"{secs_left:.0f}s left  ✓ {side_label}"
             )
             side = "yes" if yes_in_zone else "no"
@@ -104,26 +107,26 @@ class Crypto15mJob:
             await self._enter(ticker, side, ask_price, secs_left)
         else:
             logger.debug(
-                f"{ticker}  YES ask={yes_ask}¢  NO ask={no_ask}¢  "
+                f"{ticker}  YES ask={yes_ask}$  NO ask={no_ask}$  "
                 f"{secs_left:.0f}s left  "
-                f"(want {self.cfg.entry_cents}¢)"
+                f"(want {self.cfg.entry_dollars}$)"
             )
 
-    async def _enter(self, ticker: str, side: str, ask_price: float, secs_left: float):
-        logger.info(f"[{ticker}] {side.upper()} @ {ask_price}¢ {secs_left:.0f}s left — entering")
+    async def _enter(self, ticker: str, side: str, ask_price: str, secs_left: float):
+        logger.info(f"[{ticker}] {side.upper()} @ {ask_price}$ {secs_left:.0f}s left — entering")
 
         buy = None
         if side == 'yes':
-            buy =  await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, yes_price=ask_price)
+            buy =  await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, yes_price_dollars=ask_price)
         else:
-            buy = await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, no_price=ask_price)
+            buy = await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, no_price_dollars=ask_price)
         if not buy:
             logger.error(f"Buy order failed for {ticker} {side}")
             return
 
         if buy.get("status") == "resting":
             logger.error(f"Buy order {buy.get('order_id')} is resting for {ticker} {side}")
-            self._telegram.send(f"⏳Pending {ticker} {side} @ {ask_price}¢ [{buy.get('order_id')}] on {convert_utc_to_ny(buy.get('created_time'))}")
+            await self._telegram.send(f"⏳Pending {ticker} {side} @ {ask_price}¢ [{buy.get('order_id')}] on {convert_utc_to_ny(buy.get('created_time'))}")
             self._active_trade = {
                 "status": "buy_resting",
                 "side": side,
@@ -140,30 +143,31 @@ class Crypto15mJob:
         }
         await self.take_profit_leave(ticker, side, ask_price)
 
-    async def take_profit_leave(self, ticker: str, side: str, start_price: float):
+    async def take_profit_leave(self, ticker: str, side: str, start_price: str):
         env_tag = "[DEMO]" if self._use_demo else "[LIVE]"
-        take_profit_price = min(start_price + 0.05, 0.99)
+        start_price_float = float(start_price)
+        take_profit_price = f'{min(start_price_float + 0.05, 0.99):.2f}'
 
         sell = None
         if side == 'yes':
-            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, yes_price=take_profit_price)
+            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, yes_price_dollars=take_profit_price)
         else:
-            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, no_price=take_profit_price)
+            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, no_price_dollars=take_profit_price)
 
         if sell.get("status") == "executed":
-            self._telegram.send(f"✅Take profit {ticker} {side} @ {take_profit_price}¢ [{sell.get('order_id')}] on {convert_utc_to_ny(sell.get('created_time'))}")
+            await self._telegram.send(f"✅Take profit {ticker} {side} @ {take_profit_price}¢ [{sell.get('order_id')}] on {convert_utc_to_ny(sell.get('created_time'))}")
             self._active_trade = None
             return
 
         await self._telegram.send(
             f"<b>[{ticker}] Scalp Signal {env_tag}</b>\n"
-            f"<b>{side.upper()}</b> <b>{start_price}¢</b> → <b>{take_profit_price}¢</b>\n"
-            f"Contracts: {self.cfg.count} | cost ~${start_price * self.cfg.count / 100:.2f}\n"
+            f"<b>{side.upper()}</b> <b>{start_price}$</b> → <b>{take_profit_price}$</b>\n"
+            f"Counts: {self.cfg.count} | cost ~${start_price_float * self.cfg.count:.2f}\n"
             f"Buy order placed @ {convert_utc_to_ny(self._active_trade['buy_order'].get('created_time'))}\n"
             f"Take profit order placed @ {convert_utc_to_ny(sell.get('created_time'))}\n"
         )
 
-        stop_loss_price = start_price - 0.05
+        stop_loss_price = start_price_float - 0.05
         self._active_trade = {
             "side": side,
             "status": "sell_resting",
@@ -179,17 +183,17 @@ class Crypto15mJob:
                 strategy="scalp",
                 market_ticker=ticker,
                 side=side,
-                contracts=self.cfg.contracts,
-                price_per_contract=start_price / 100.0,
-                total_cost=round(start_price * self.cfg.contracts / 100.0, 2),
+                count=self.cfg.count,
+                price_per_contract=start_price_float,
+                total_cost=round(start_price_float * self.cfg.count, 2),
                 kalshi_order_id=sell.get("order_id", "") if sell else "failed",
                 status="open",
             )
             await self._db.log_bet(bet)
 
-    async def _stop_loss_exit(self, ticker: str, current_bid: float):
-        side = self._active_trade["side"]
-        entry_price = self._active_trade.get("entry_price", 0)
+    async def _stop_loss_exit(self, ticker: str, current_bid: str):
+        side = self._active_trade.get("side")
+        entry_price = float(self._active_trade.get("entry_price", 0))
         sell_order = self._active_trade.get("sell_order")
         sell_id = sell_order.get("order_id")
 
@@ -205,33 +209,34 @@ class Crypto15mJob:
                     f"Failed to cancel profit-sell {sell_id} for {ticker} "
                     f"— proceeding with stop sell anyway"
                 )
-            self._telegram.send(f"❌ Fail to cancel {ticker} {side} @ {entry_price}¢ [{sell_id}] on {convert_utc_to_ny(cancelled.get('created_time'))}")
+                await self._telegram.send(f"❌ Fail to cancel {ticker} {side} @ {entry_price}¢ [{sell_id}] on {convert_utc_to_ny(sell_order.get('created_time'))}")
 
-        exit_price = self._active_trade.get("stop_loss_price")
+        stop_loss_price = self._active_trade.get("stop_loss_price")
+        exit_price = f'{stop_loss_price:.2f}'
         stop_sell = None
         if side == 'yes':
-            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.contracts, yes_price=exit_price)
+            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.count, yes_price_dollars=exit_price)
         else:
-            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.contracts, no_price=exit_price)
+            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.count, no_price_dollars=exit_price)
 
         if stop_sell.get("status") == "executed":
-            self._telegram.send(f"❌Take profit {ticker} {self._active_trade['side']} @ {self._active_trade['entry_price']}¢ [{sell_order.get('order_id')}] on {convert_utc_to_ny(sell_order.get('created_time'))}")
+            await self._telegram.send(f"❌Take profit {ticker} {self._active_trade['side']} @ {self._active_trade['entry_price']}¢ [{sell_order.get('order_id')}] on {convert_utc_to_ny(sell_order.get('created_time'))}")
         else:
-            self._telegram.send(f"❌Fail to cancel {ticker} {side} @ {entry_price}¢ [{sell_id}] on {convert_utc_to_ny(cancelled.get('created_time'))}")    
+            await self._telegram.send(f"❌Fail to cancel {ticker} {side} @ {entry_price}¢ [{sell_id}] on {convert_utc_to_ny(cancelled.get('created_time'))}")    
         stop_sell_id = stop_sell.get("order_id", "") if stop_sell else "failed"
 
-        loss_cents = (entry_price - exit_price) * self.cfg.contracts
+        loss_cents = (entry_price - stop_loss_price) * self.cfg.count
         logger.warning(
-            f"[{self.cfg.series}] {ticker} stop-sell placed @ {exit_price}¢  id={stop_sell_id}  "
-            f"loss ~${loss_cents / 100:.2f}"
+            f"[{self.cfg.series}] {ticker} stop-sell placed @ {exit_price}$  id={stop_sell_id}  "
+            f"loss ~${loss_cents:.2f}"
         )
 
         env_tag = " [DEMO]" if self._use_demo else ""
         await self._telegram.send(
             f"<b>[{self.cfg.series}] Stop Loss Hit{env_tag}</b>\n"
             f"Market: {ticker}\n"
-            f"Side: {side.upper()} | Entry: {entry_price}¢ → Stop: {exit_price}¢\n"
-            f"Loss: ~${loss_cents / 100:.2f}  |  order={stop_sell_id}"
+            f"Side: {side.upper()} | Entry: {entry_price}$ → Stop: {exit_price}$\n"
+            f"Loss: ~${loss_cents:.2f}  |  order={stop_sell_id}"
         )
 
         self._active_trade = None
@@ -250,7 +255,7 @@ class Crypto15mJob:
             sell_order = await self._client.get_order(self._active_trade["sell_order"]["order_id"])
             if sell_order["status"] == "executed":
                 logger.info(f"[{self.cfg.series}] {ticker} Sell order filled")
-                self._telegram.send(f"✅Take profit {ticker} {self._active_trade['side']} @ {self._active_trade['entry_price']}¢ [{sell_order.get('order_id')}] on {convert_utc_to_ny(sell_order.get('created_time'))}")
+                await self._telegram.send(f"✅Take profit {ticker} {self._active_trade['side']} @ {self._active_trade['entry_price']}¢ [{sell_order.get('order_id')}] on {convert_utc_to_ny(sell_order.get('created_time'))}")
                 self._active_trade = None
                 return
             else:
@@ -260,9 +265,12 @@ class Crypto15mJob:
                 no_ask  = market.get("no_ask_dollars")
                 no_bid  = market.get("no_bid_dollars")
 
+                yes_price = float(yes_ask)
+                no_price = float(no_ask)
+
                 if self._active_trade["side"] == "yes":
-                    if yes_ask < self._active_trade["stop_loss_price"]:
+                    if yes_price < self._active_trade["stop_loss_price"]:
                         await self._stop_loss_exit(ticker, yes_bid)
                 else:
-                    if no_ask < self._active_trade["stop_loss_price"]:
+                    if no_price < self._active_trade["stop_loss_price"]:
                         await self._stop_loss_exit(ticker, no_bid)

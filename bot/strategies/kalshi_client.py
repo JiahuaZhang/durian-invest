@@ -163,10 +163,11 @@ class KalshiClient:
         params = {"subaccount": subaccount if isinstance(subaccount, int) else self.subaccount}
         try:
             resp = await self._client.delete(path, headers=headers, params=params)
-            return resp.status_code == 200
+            resp.raise_for_status()
+            return resp.json().get("order")
         except Exception as e:
             logger.error(f"Failed to cancel order {order_id}: {e}")
-            return False
+            return None
 
     # ── Subaccount helpers (manual use only — not called by the bot) ──────────
 
