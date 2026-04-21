@@ -37,26 +37,14 @@ def compute_seconds_remaining(market: dict) -> float:
     except Exception:
         return 0.0
 
+def get_current_15m_market_ticker(series: str) -> str:
+    now = datetime.now().astimezone(_ET)
 
-def current_market_ticker(series: str, now: datetime) -> tuple[str, datetime]:
-    """
-    Generate the ticker and close_time for the currently-open 15-min window.
-
-    Kalshi encodes the close boundary in Eastern time regardless of UTC date,
-    so we convert now → ET before computing the boundary and formatting the ticker.
-    The returned close_time is UTC for downstream arithmetic.
-
-      KXBTC15M-26APR172300-00   (April 17 23:00 ET, even if that's April 18 UTC)
-               ^^^^^^^^^^^ ^^
-               YYMONDDHHM  MM (minutes repeated, ET)
-    """
-    now_et = now.astimezone(_ET)
-
-    next_q = ((now_et.minute // 15) + 1) * 15
-    if next_q >= 60:
-        close_et = (now_et + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    next_q = ((now.minute // 15) + 1) * 15
+    if next_q == 60:
+        close_et = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
     else:
-        close_et = now_et.replace(minute=next_q, second=0, microsecond=0)
+        close_et = now.replace(minute=next_q, second=0, microsecond=0)
 
     ticker = (
         f"{series}"
@@ -64,4 +52,4 @@ def current_market_ticker(series: str, now: datetime) -> tuple[str, datetime]:
         f"{close_et.strftime('%H%M')}"
         f"-{close_et.strftime('%M')}"
     )
-    return ticker, close_et.astimezone(timezone.utc)
+    return ticker, close_et.timestamp()

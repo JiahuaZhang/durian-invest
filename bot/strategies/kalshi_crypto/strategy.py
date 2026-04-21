@@ -23,7 +23,7 @@ from strategies.base_strategy import TradingStrategy
 from strategies.telegram_notifier import TelegramNotifier
 from strategies.kalshi_crypto.config import BtcScalpConfig, CryptoJobConfig
 from strategies.kalshi_crypto.crypto15m_job import Crypto15mJob
-from strategies.kalshi_crypto.kalshi_crypto_client import KalshiCryptoClient
+from strategies.kalshi_client import KalshiClient
 from strategies.kalshi_crypto.supabase_logger import SupabaseLogger
 
 logger = logging.getLogger(__name__)
@@ -42,9 +42,9 @@ class KalshiCryptoStrategy(TradingStrategy):
             )
             raise ValueError(f"{env_hint} must be set in .env")
 
-        self._client = KalshiCryptoClient(
-            self.cfg.api_key_id,
-            self.cfg.private_key,
+        self._client = KalshiClient(
+            api_key_id=self.cfg.api_key_id,
+            private_key_pem=self.cfg.private_key,
             subaccount=self.cfg.subaccount,
             use_demo=self.cfg.use_demo,
         )
@@ -75,8 +75,7 @@ class KalshiCryptoStrategy(TradingStrategy):
             f"series={self.cfg.series} | "
             f"entry {self.cfg.entry_dollars}$ → "
             f"sell@{self.cfg.target_dollars}$ stop@{self.cfg.stop_loss_dollars}$ | "
-            f"count={self.cfg.count} | "
-            f"schedule=:00/:15/:30/:45"
+            f"count={self.cfg.count}"
         )
 
     def get_name(self) -> str:
@@ -86,6 +85,7 @@ class KalshiCryptoStrategy(TradingStrategy):
         return "scheduled"
 
     async def start(self):
+        await self._jobs[0].run()
         for job in self._jobs:
             self._scheduler.add_job(
                 job.run,
