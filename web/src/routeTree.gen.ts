@@ -18,6 +18,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as OptionTastytradeRouteImport } from './routes/option.tastytrade'
 import { Route as OptionCmeRouteImport } from './routes/option.cme'
 import { Route as OptionAlpacaRouteImport } from './routes/option.alpaca'
+import { Route as KalshiBitcoinRouteImport } from './routes/kalshi.bitcoin'
 import { Route as DomBtcRouteImport } from './routes/dom.btc'
 import { Route as BotOrbRouteImport } from './routes/bot.orb'
 import { Route as OptionUnusualBarchartRouteImport } from './routes/option.unusual.barchart'
@@ -67,6 +68,11 @@ const OptionAlpacaRoute = OptionAlpacaRouteImport.update({
   path: '/option/alpaca',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KalshiBitcoinRoute = KalshiBitcoinRouteImport.update({
+  id: '/kalshi/bitcoin',
+  path: '/kalshi/bitcoin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DomBtcRoute = DomBtcRouteImport.update({
   id: '/dom/btc',
   path: '/dom/btc',
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/overview': typeof OverviewRoute
   '/bot/orb': typeof BotOrbRoute
   '/dom/btc': typeof DomBtcRoute
+  '/kalshi/bitcoin': typeof KalshiBitcoinRoute
   '/option/alpaca': typeof OptionAlpacaRoute
   '/option/cme': typeof OptionCmeRoute
   '/option/tastytrade': typeof OptionTastytradeRoute
@@ -106,6 +113,7 @@ export interface FileRoutesByTo {
   '/overview': typeof OverviewRoute
   '/bot/orb': typeof BotOrbRoute
   '/dom/btc': typeof DomBtcRoute
+  '/kalshi/bitcoin': typeof KalshiBitcoinRoute
   '/option/alpaca': typeof OptionAlpacaRoute
   '/option/cme': typeof OptionCmeRoute
   '/option/tastytrade': typeof OptionTastytradeRoute
@@ -121,6 +129,7 @@ export interface FileRoutesById {
   '/overview': typeof OverviewRoute
   '/bot/orb': typeof BotOrbRoute
   '/dom/btc': typeof DomBtcRoute
+  '/kalshi/bitcoin': typeof KalshiBitcoinRoute
   '/option/alpaca': typeof OptionAlpacaRoute
   '/option/cme': typeof OptionCmeRoute
   '/option/tastytrade': typeof OptionTastytradeRoute
@@ -137,6 +146,7 @@ export interface FileRouteTypes {
     | '/overview'
     | '/bot/orb'
     | '/dom/btc'
+    | '/kalshi/bitcoin'
     | '/option/alpaca'
     | '/option/cme'
     | '/option/tastytrade'
@@ -151,6 +161,7 @@ export interface FileRouteTypes {
     | '/overview'
     | '/bot/orb'
     | '/dom/btc'
+    | '/kalshi/bitcoin'
     | '/option/alpaca'
     | '/option/cme'
     | '/option/tastytrade'
@@ -165,6 +176,7 @@ export interface FileRouteTypes {
     | '/overview'
     | '/bot/orb'
     | '/dom/btc'
+    | '/kalshi/bitcoin'
     | '/option/alpaca'
     | '/option/cme'
     | '/option/tastytrade'
@@ -180,6 +192,7 @@ export interface RootRouteChildren {
   OverviewRoute: typeof OverviewRoute
   BotOrbRoute: typeof BotOrbRoute
   DomBtcRoute: typeof DomBtcRoute
+  KalshiBitcoinRoute: typeof KalshiBitcoinRoute
   OptionAlpacaRoute: typeof OptionAlpacaRoute
   OptionCmeRoute: typeof OptionCmeRoute
   OptionTastytradeRoute: typeof OptionTastytradeRoute
@@ -251,6 +264,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OptionAlpacaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kalshi/bitcoin': {
+      id: '/kalshi/bitcoin'
+      path: '/kalshi/bitcoin'
+      fullPath: '/kalshi/bitcoin'
+      preLoaderRoute: typeof KalshiBitcoinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dom/btc': {
       id: '/dom/btc'
       path: '/dom/btc'
@@ -284,6 +304,7 @@ const rootRouteChildren: RootRouteChildren = {
   OverviewRoute: OverviewRoute,
   BotOrbRoute: BotOrbRoute,
   DomBtcRoute: DomBtcRoute,
+  KalshiBitcoinRoute: KalshiBitcoinRoute,
   OptionAlpacaRoute: OptionAlpacaRoute,
   OptionCmeRoute: OptionCmeRoute,
   OptionTastytradeRoute: OptionTastytradeRoute,
