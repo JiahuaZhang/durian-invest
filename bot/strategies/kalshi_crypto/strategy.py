@@ -14,10 +14,8 @@ Optional:
   SUPABASE_URL, SUPABASE_SERVICE_KEY  — bet logging
   TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID — notifications
 """
-import asyncio
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 
 from strategies.base_strategy import TradingStrategy
 from strategies.telegram_notifier import TelegramNotifier
@@ -65,9 +63,7 @@ class KalshiCryptoStrategy(TradingStrategy):
             stop_loss_dollars=self.cfg.stop_loss_dollars,
             count=self.cfg.count,
         )
-        self._jobs: list[Crypto15mJob] = [
-            Crypto15mJob(job_cfg, self._client, self._db, self._telegram, self.cfg.use_demo),
-        ]
+        self._job: Crypto15mJob = Crypto15mJob(job_cfg, self._client, self._db, self._telegram, self.cfg.use_demo)
 
         env_tag = "[DEMO]" if self.cfg.use_demo else "[LIVE]"
         logger.info(
@@ -85,32 +81,11 @@ class KalshiCryptoStrategy(TradingStrategy):
         return "scheduled"
 
     async def start(self):
-        await self._jobs[0].run()
-        for job in self._jobs:
-            self._scheduler.add_job(
-                job.run,
-                CronTrigger(minute="0,15,30,45"),
-                id=f"scalp_{job.cfg.series}",
-                name=f"{job.cfg.series} 15m scalp",
-            )
-        self._scheduler.start()
-        self.is_running = True
-        logger.info(
-            f"KalshiCrypto started — {len(self._jobs)} job(s) scheduled at :00/:15/:30/:45"
-        )
-
-        try:
-            while self.is_running:
-                await asyncio.sleep(86400)
-        except asyncio.CancelledError:
-            pass
+        await self._job.start()
 
     async def stop(self):
-        self.is_running = False
-        if hasattr(self, "_scheduler"):
-            self._scheduler.shutdown(wait=False)
-        if hasattr(self, "_client"):
-            await self._client.close()
+        # await self._job.stop()
+        pass
 
     def get_stats(self) -> dict:
         return {
@@ -122,17 +97,5 @@ class KalshiCryptoStrategy(TradingStrategy):
             ],
         }
 
-
     def is_enabled(self) -> bool:
         return self.cfg.enabled
-
-
-if __name__ == "__main__":
-    async def _run():
-        s = KalshiCryptoStrategy()
-        await s.start()
-
-    try:
-        asyncio.run(_run())
-    except KeyboardInterrupt:
-        print("\nStopped")

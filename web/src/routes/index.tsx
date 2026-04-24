@@ -1,12 +1,13 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router';
 
-export const Route = createFileRoute('/')({ component: App })
+export const Route = createFileRoute('/')({ component: App });
 
 const links = [
   { link: 'https://tradingview.com/', name: 'Trading View' },
   { link: 'https://optioncharts.io/', name: 'Option Charts' },
   { link: 'https://www.google.com/finance', name: 'Google Finance' },
-]
+  { link: 'https://wall-street-skill.com', name: 'Wall Street Skills' },
+];
 
 function App() {
   return (
@@ -21,5 +22,5 @@ function App() {
         }
       </div>
     </div>
-  )
+  );
 }

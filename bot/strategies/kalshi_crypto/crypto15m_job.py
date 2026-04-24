@@ -1,17 +1,17 @@
 import asyncio
 import json
 import logging
-import time
-from datetime import datetime, timezone
-
+from apscheduler.triggers.cron import CronTrigger
 import websockets
-
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from strategies.telegram_notifier import TelegramNotifier
 from strategies.kalshi_crypto.config import CryptoJobConfig
 from strategies.kalshi_client import KalshiClient
+from strategies.kalshi_crypto.crypto_order_book import CryptoOrderBook
 from strategies.kalshi_crypto.supabase_logger import SupabaseLogger
-from strategies.kalshi_crypto.market_state import get_current_15m_market_ticker
+from strategies.kalshi_crypto.market_state import get_current_15m_market_ticker, get_next_15m_market_ticker, get_last_closed_15m_market_ticker
 from strategies.util import convert_utc_to_ny
+from strategies.kalshi_crypto.util import from_iso_to_ts
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,15 @@ class Crypto15mJob:
         self._db = db
         self._telegram = telegram
         self._use_demo = use_demo
-        self._active_trade: dict | None = None
-        self.ticker: str = ""
-        self.close_time: int = 0
-        self.subscribed_ids: list[int] = []
-        self.state: str = 'ready'
 
-    async def run(self):
+        self.tickers: list[str] = []
+        self.orderbook_delta_sid: int = 0
+        self.books: dict[str, CryptoOrderBook] = {}
+        self.scheduler = AsyncIOScheduler()
+        self.state : str = 'ready'
+        self._active_trade: dict | None = None
+
+    async def start(self):
         """
         Stream ticker data via WebSocket for one 15-min window.
 
@@ -55,27 +57,28 @@ class Crypto15mJob:
         """
         
         self.initialize()
-        channels = ["ticker", "orderbook_delta"]
+        # ticker, orderbook_delta, market_positions, market_lifecycle_v2, multivariate_market_lifecycle, multivariate, communications, order_group_updates, user_orders
+        channels = ["orderbook_delta"]
 
         while True:
             try:
                 async with self._client.connect_ws() as ws:
-                    await self._client.ws_subscribe(ws, channels, market_ticker=self.ticker, send_initial_snapshot=True)
-                    logger.info(f"WebSocket subscribed to [{self.ticker}]")
+                    self.scheduler.remove_all_jobs()
+                    self.scheduler.add_job(self.subscribe_next_ticker, args=[ws], trigger=CronTrigger(minute='14, 29, 44, 59', second=59))
+                    self.scheduler.add_job(self.unsubscribe_last_closed_ticker, args=[ws], trigger=CronTrigger(minute='0, 15, 30, 45'))
+                    self.scheduler.start()
+
+                    await self._client.ws_subscribe(ws, channels, market_tickers=self.tickers, send_initial_snapshot=True)
+                    logger.info(f"Init webSocket subscribed to {self.tickers}")
 
                     async for message in ws:
-                        result = self.process_message(message)
-                        if result == 'Unsubscribe':
-                            await self._client.ws_unsubscribe(ws, self.subscribed_ids)
-                            self.initialize()
-                            await self._client.ws_subscribe(ws, channels, market_ticker=self.ticker, send_initial_snapshot=True)
-                            logger.info(f"WebSocket subscribed to [{self.ticker}]")
+                        self.process_message(message)
 
             except (websockets.ConnectionClosed, ConnectionError) as e:
-                logger.warning(f"[{self.ticker}] WS disconnected ({e}), reconnecting...")
+                logger.warning(f"WebSocket connection closed ({e}), reconnecting...")
                 await asyncio.sleep(1)
             except Exception as e:
-                logger.error(f"[{self.ticker}] WS error: {e}", exc_info=True)
+                logger.error(f"WebSocket error: {e}", exc_info=True)
                 await asyncio.sleep(2)
 
         end_balance = await self._client.get_balance()
@@ -84,44 +87,109 @@ class Crypto15mJob:
         await self._telegram.send(f"💰 [{ticker}] {start_balance} → {end_balance} Profit: ${profit:.2f}")
 
     def initialize(self):
-        self.ticker, self.close_time = get_current_15m_market_ticker(self.cfg.series)
-        self.subscribed_ids = []
-        self.state = 'ready'
+        self.tickers = [get_current_15m_market_ticker(self.cfg.series)]
 
     def process_message(self, message: str):
         response = json.loads(message)
-        if response.get("type") == "subscribed":
-            return self.process_subscribed(response)
-        elif response.get("type") == "ticker":
-            return self.process_market_ticker(response)
-        elif response.get("type") == "orderbook_delta":
-            return self.process_orderbook_delta(response)
-        else:
-            logger.info(f"[SPECIAL] {response}")
+        match response.get('type'):
+            case 'ok':
+                return self.process_ok(response)
+            case 'error':
+                return self.process_error(response)
+            case "subscribed":
+                return self.process_subscribed(response)
+            case "unsubscribed":
+                return self.process_unsubscribed(response)
+            case "ticker":
+                return self.process_market_ticker(response)
+            case "orderbook_delta":
+                return self.process_orderbook_delta(response)
+            case "orderbook_snapshot":
+                return self.process_orderbook_snapshot(response)
+            case _:
+                logger.info(f"[UNKNOWN] {response}")
+
+    def process_ok(self, response: dict):
+        msg = response.get('msg')
+        if isinstance(msg, list):
+            channels = [f"{item['channel']}: {item['sid']}" for item in msg]
+            logger.info(f"List subscriptions: {channels}")
+        elif isinstance(msg, dict):
+            market_tickers = msg.get('market_tickers')
+            if market_tickers:
+                logger.info(f"Ok Response for market_tickers: {market_tickers}")
+                for ticker in list[str](self.books.keys()):
+                    if ticker not in market_tickers:
+                        del self.books[ticker]
+                        logger.info(f"Delete Orderbook for {ticker} because it is not in the new market_tickers")
+            else:
+                logger.info(f"[UNKNOWN] Ok Response: {msg}")
+
+    def process_error(self, response: dict):
+        msg = response.get('msg')
+        logger.error(f"WebSocket Error: [{msg.get('code')}] {msg.get('msg')}")
 
     def process_subscribed(self, response: dict):
-        self.subscribed_ids.append(response.get('msg', {}).get('sid'))
-        logger.info(f"[{self.ticker}] WebSocket Subscription IDs: {self.subscribed_ids}")
-        return None
+        msg = response.get('msg')
+        channel = msg.get('channel')
+        sid = msg.get('sid')
+        if channel == 'orderbook_delta':
+            self.orderbook_delta_sid = sid
+            logger.info(f"orderbook_delta channel sid: {sid}")
+        else:
+            logger.error(f"[UNKNOWN] unhandled channel: {channel}")
+    
+    def process_unsubscribed(self, response: dict):
+        logger.info(f"Unsubscribed id: {response.get('id')} sid: {response.get('sid')} seq: {response.get('seq')}")
 
     def process_orderbook_snapshot(self, response: dict):
-        pass
+        msg = response.get("msg")
+        market_ticker = msg.get("market_ticker")
+        seq = response.get("seq", 0)
+        if market_ticker not in self.books:
+            self.books[market_ticker] = CryptoOrderBook()
+            self.books[market_ticker].load_snapshot(msg, seq=seq)
+            logger.info(f"Create New Orderbook for {market_ticker}")
+            logger.info(f"Orderbook Snapshot: {msg}")
+        else:
+            # seems like Kalshi websocket would send snapshot when subscribed to new tocker
+            # the old one would still received it, use this mechanism to smartly delete the old one
+            pass
 
     def process_orderbook_delta(self, response: dict):
-        # {'market_ticker': 'KXBTC15M-26APR210900-00', 'market_id': '5adb0651-edb4-490e-8909-49825428bf1e', 'price_dollars': '0.3400', 'delta_fp': '142.00', 'side': 'no', 'ts': '2026-04-21T12:52:15.63042Z'}
-        msg = response.get('msg')
-        price_dollars = float(msg.get('price_dollars'))
-        delta_fp = float(msg.get('delta_fp'))
-        side = msg.get('side')
-        ts = msg.get('ts')
-        # logger.info(f"[{self.ticker}] Orderbook Delta: {ts} price_dollars=${price_dollars} delta_fp={delta_fp} side={side}")
-        return None
+        msg = response.get("msg")
+        market_ticker = msg.get("market_ticker")
+        book = self.books[market_ticker]
+        book.apply_delta(msg)
+
+        if self.state == 'ready':
+            if self.cfg.entry_dollars <= book.yes_ask <= self.cfg.target_dollars:
+                spread_status = 'TIGHT' if book.yes_spread <= 0.01 else 'MODERATE' if book.yes_spread <= 0.02 else 'RISKY'
+                fillable_contracts = book.ask_depth_up_to('yes', self.cfg.entry_dollars)
+                conviction_contracts = book.depth_at('yes', self.cfg.entry_dollars)
+                take_profit_contracts = book.bid_depth_above('yes', self.cfg.target_dollars)
+                stop_safe_contracts = book.bid_depth_above('yes', self.cfg.stop_loss_dollars)
+                logger.info(
+                    f"BUY YES for {market_ticker} yes_ask: {book.yes_ask} best_yes_bid: {book.best_yes_bid} yes_spread: {book.yes_spread} " +
+                    f"no_ask: {book.no_ask} best_no_bid: {book.best_no_bid} no_spread: {book.no_spread} " +
+                    f"Spread: {spread_status} Fillable <= ${self.cfg.entry_dollars}: {fillable_contracts} Conviction = ${self.cfg.entry_dollars}: {conviction_contracts} " +
+                    f"Take Profit >= ${self.cfg.target_dollars}: {take_profit_contracts} contracts Stop Safe >= ${self.cfg.stop_loss_dollars}: {stop_safe_contracts} contracts"
+                )
+            elif self.cfg.entry_dollars <= book.no_ask <= self.cfg.target_dollars:
+                spread_status = 'TIGHT' if book.no_spread <= 0.01 else 'MODERATE' if book.no_spread <= 0.02 else 'RISKY'
+                fillable_contracts = book.ask_depth_up_to('no', self.cfg.entry_dollars)
+                conviction_contracts = book.depth_at('no', self.cfg.entry_dollars)
+                take_profit_contracts = book.bid_depth_above('no', self.cfg.target_dollars)
+                stop_safe_contracts = book.bid_depth_above('no', self.cfg.stop_loss_dollars)
+                logger.info(
+                    f"BUY NO for {market_ticker} no_ask: {book.no_ask} best_no_bid: {book.best_no_bid} no_spread: {book.no_spread} " +
+                    f"yes_ask: {book.yes_ask} best_yes_bid: {book.best_yes_bid} yes_spread: {book.yes_spread} " +
+                    f"Spread: {spread_status} Fillable <= ${self.cfg.entry_dollars}: {fillable_contracts} Conviction = ${self.cfg.entry_dollars}: {conviction_contracts} " +
+                    f"Take Profit >= ${self.cfg.target_dollars}: {take_profit_contracts} contracts Stop Safe >= ${self.cfg.stop_loss_dollars}: {stop_safe_contracts} contracts"
+                )
 
     def process_market_ticker(self, response: dict):
         msg = response.get('msg')
-
-        if self.state == 'ready':
-            return None
 
         price_dollars = float(msg.get('price_dollars'))
         yes_ask_dollars = float(msg.get('yes_ask_dollars'))
@@ -134,13 +202,15 @@ class Crypto15mJob:
         # logger.info(f"{msg}")
         # logger.info(f"[{self.ticker}] Price: ${price_dollars} Yes Ask: ${yes_ask_dollars} Yes Bid: ${yes_bid_dollars} No Ask: ${no_ask_dollars} No Bid: ${no_bid_dollars} TS: {ts} Time: {time}")
 
-        difference = self.close_time - ts
-        # logger.info(f"[{self.ticker}] Time difference: {difference} seconds, price: ${price_dollars}")
+    async def subscribe_next_ticker(self, ws: websockets.WebSocketClientProtocol):
+        next_ticker = get_next_15m_market_ticker(self.cfg.series)
+        await self._client.ws_add_markets(ws, self.orderbook_delta_sid, market_ticker=next_ticker)
+        logger.info(f"Subscribe to next ticker: {next_ticker}")
 
-        if self.close_time <= ts:
-            return 'Unsubscribe'
-
-        return None
+    async def unsubscribe_last_closed_ticker(self, ws: websockets.WebSocketClientProtocol):
+        last_closed_ticker = get_last_closed_15m_market_ticker(self.cfg.series)
+        await self._client.ws_delete_markets(ws, self.orderbook_delta_sid, market_ticker=last_closed_ticker)
+        logger.info(f"Unsubscribe from last closed ticker: {last_closed_ticker}")
 
     def attempt_buy(self, response: dict):
         msg = response.get('msg')
@@ -319,21 +389,6 @@ class Crypto15mJob:
             "sell_order": sell,
             "stop_loss_price": stop_loss_price,
         }
-
-        if self._db:
-            from .models import CryptoBet
-            bet = CryptoBet(
-                asset_id=self.cfg.series.lower(),
-                strategy="scalp",
-                market_ticker=ticker,
-                side=side,
-                count=self.cfg.count,
-                price_per_contract=start_price_float,
-                total_cost=round(start_price_float * self.cfg.count, 2),
-                kalshi_order_id=sell.get("order_id", "") if sell else "failed",
-                status="open",
-            )
-            await self._db.log_bet(bet)
 
     # ── Stop-loss exit ────────────────────────────────────────────────────
 

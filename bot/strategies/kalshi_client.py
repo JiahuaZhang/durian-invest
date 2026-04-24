@@ -145,6 +145,39 @@ class KalshiClient:
         await ws.send(json.dumps({"id": cmd_id, "cmd": "unsubscribe", "params": {"sids": sids}}))
         return cmd_id
 
+    async def ws_list_subscriptions(self, ws) -> int:
+        cmd_id = self._next_ws_id()
+        await ws.send(json.dumps({"id": cmd_id, "cmd": "list_subscriptions"}))
+        return cmd_id
+
+    async def ws_add_markets(self, ws, sid: int, market_ticker: str = None, market_tickers: list[str] = None, market_id : str = None, market_ids : list[str] = None) -> int:
+        cmd_id = self._next_ws_id()
+        params: dict = {"sid": sid, 'action': 'add_markets'}
+        if market_ticker:
+            params["market_ticker"] = market_ticker
+        elif market_tickers:
+            params["market_tickers"] = market_tickers
+        elif market_id:
+            params["market_id"] = market_id
+        elif market_ids:
+            params["market_ids"] = market_ids
+        await ws.send(json.dumps({"id": cmd_id, "cmd": "update_subscription", "params": params}))
+        return cmd_id
+
+    async def ws_delete_markets(self, ws, sid: int, market_ticker: str = None, market_tickers: list[str] = None, market_id : str = None, market_ids : list[str] = None) -> int:
+        cmd_id = self._next_ws_id()
+        params: dict = {"sid": sid, 'action': 'delete_markets'}
+        if market_ticker:
+            params["market_ticker"] = market_ticker
+        elif market_tickers:
+            params["market_tickers"] = market_tickers
+        elif market_id:
+            params["market_id"] = market_id
+        elif market_ids:
+            params["market_ids"] = market_ids
+        await ws.send(json.dumps({"id": cmd_id, "cmd": "update_subscription", "params": params}))
+        return cmd_id
+
     # ── Market ────────────────────────────────────────────────────────────────
 
     async def get_market(self, ticker: str) -> Optional[dict]:
