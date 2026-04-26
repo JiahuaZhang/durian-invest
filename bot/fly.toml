@@ -2,7 +2,7 @@
 # Configuration for Durian Invest Trading Bot
 
 app = "botvest"
-primary_region = "iad"
+primary_region = "ord"
 
 [build]
 

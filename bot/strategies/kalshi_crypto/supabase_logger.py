@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 from supabase import create_client, Client
 
-from strategies.kalshi_crypto.models import CryptoSignal
+from strategies.kalshi_crypto.models import CryptoSignal, CryptoBet, CryptoResolution
 
 logger = logging.getLogger(__name__)
 

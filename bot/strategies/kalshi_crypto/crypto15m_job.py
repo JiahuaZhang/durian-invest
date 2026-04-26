@@ -1,6 +1,9 @@
 import asyncio
+import ctypes
 import json
 import logging
+import sys
+import time
 from apscheduler.triggers.cron import CronTrigger
 import websockets
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -10,12 +13,34 @@ from strategies.kalshi_client import KalshiClient
 from strategies.kalshi_crypto.crypto_order_book import CryptoOrderBook
 from strategies.kalshi_crypto.supabase_logger import SupabaseLogger
 from strategies.kalshi_crypto.market_state import get_current_15m_market_ticker, get_next_15m_market_ticker, get_last_closed_15m_market_ticker
-from strategies.util import convert_utc_to_ny
-from strategies.kalshi_crypto.util import from_iso_to_ts
+from strategies.kalshi_crypto.util import ts_ms_to_time_str, countdown_15m, seconds_to_next_15m
 
-logger = logging.getLogger(__name__)
+class _CountdownAdapter(logging.LoggerAdapter):
+    """Prepends [MM:SS] countdown to every log message automatically."""
+    def process(self, msg, kwargs):
+        return f"{countdown_15m()} {msg}", kwargs
 
-ORDER_CHECK_INTERVAL = 5  # seconds between REST order-status polls
+logger = _CountdownAdapter(logging.getLogger(__name__), {})
+
+# Signal levels (evaluated per-tick, fired once each per market window)
+SIGNAL_DWI_THRESHOLD = 0.5      # Level 1: |DWI| > 0.5 + contract imbalance agrees
+SIGNAL_DWI_SUSTAINED = 0.7      # Level 2: |DWI| > 0.7 sustained for 60s
+SIGNAL_DWI_STRONG = 0.9         # Level 3: |DWI| > 0.9
+SIGNAL_COMPOSITE_THRESHOLD = 0.5  # Level 4: all three metrics aligned + |DWI| > 0.5
+SUSTAINED_SECONDS = 60
+
+def _same_sign(a: float, b: float) -> bool:
+    return (a > 0 and b > 0) or (a < 0 and b < 0)
+
+
+def _prevent_sleep():
+    """Tell Windows to keep the system awake while the bot runs. No-op on other OSes."""
+    if sys.platform != "win32":
+        return
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
+    ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
+    logger.info("Windows sleep prevention enabled")
 
 
 class Crypto15mJob:
@@ -45,8 +70,12 @@ class Crypto15mJob:
         self.orderbook_delta_sid: int = 0
         self.books: dict[str, CryptoOrderBook] = {}
         self.scheduler = AsyncIOScheduler()
-        self.state : str = 'ready'
-        self._active_trade: dict | None = None
+
+        # Per-ticker signal snapshots: { ticker: { "L1": {details}, "L2": {details}, ... } }
+        self._signals: dict[str, dict[str, dict]] = {}
+        self._dwi_sustained: dict[str, float | None] = {}
+        # Per-ticker actual trade: set on L1 signal, consumed by ticker_cleanup
+        self._trades: dict[str, dict] = {}
 
     async def start(self):
         """
@@ -55,18 +84,17 @@ class Crypto15mJob:
         Reconnects automatically if the WS connection drops.  Exits when
         the market close time is reached.
         """
-        
+        _prevent_sleep()
+
         self.initialize()
-        # ticker, orderbook_delta, market_positions, market_lifecycle_v2, multivariate_market_lifecycle, multivariate, communications, order_group_updates, user_orders
         channels = ["orderbook_delta"]
+
+        self.scheduler.start()
 
         while True:
             try:
                 async with self._client.connect_ws() as ws:
-                    self.scheduler.remove_all_jobs()
-                    self.scheduler.add_job(self.subscribe_next_ticker, args=[ws], trigger=CronTrigger(minute='14, 29, 44, 59', second=59))
-                    self.scheduler.add_job(self.unsubscribe_last_closed_ticker, args=[ws], trigger=CronTrigger(minute='0, 15, 30, 45'))
-                    self.scheduler.start()
+                    self._reset_scheduler_jobs(ws)
 
                     await self._client.ws_subscribe(ws, channels, market_tickers=self.tickers, send_initial_snapshot=True)
                     logger.info(f"Init webSocket subscribed to {self.tickers}")
@@ -81,10 +109,11 @@ class Crypto15mJob:
                 logger.error(f"WebSocket error: {e}", exc_info=True)
                 await asyncio.sleep(2)
 
-        end_balance = await self._client.get_balance()
-        profit = end_balance - start_balance
-        logger.info(f"[{ticker}] {start_balance} → {end_balance} Profit: ${profit:.2f}")
-        await self._telegram.send(f"💰 [{ticker}] {start_balance} → {end_balance} Profit: ${profit:.2f}")
+    def _reset_scheduler_jobs(self, ws):
+        """Replace scheduler jobs with fresh ones pointing at the new WS connection."""
+        self.scheduler.remove_all_jobs()
+        self.scheduler.add_job(self.subscribe_next_ticker, args=[ws], trigger=CronTrigger(minute='14,29,44,59', second=59))
+        self.scheduler.add_job(self.unsubscribe_last_closed_ticker, args=[ws], trigger=CronTrigger(minute='0,15,30,45', second=30))
 
     def initialize(self):
         self.tickers = [get_current_15m_market_ticker(self.cfg.series)]
@@ -120,8 +149,7 @@ class Crypto15mJob:
                 logger.info(f"Ok Response for market_tickers: {market_tickers}")
                 for ticker in list[str](self.books.keys()):
                     if ticker not in market_tickers:
-                        del self.books[ticker]
-                        logger.info(f"Delete Orderbook for {ticker} because it is not in the new market_tickers")
+                        asyncio.get_event_loop().create_task(self.ticker_cleanup(ticker))
             else:
                 logger.info(f"[UNKNOWN] Ok Response: {msg}")
 
@@ -149,12 +177,9 @@ class Crypto15mJob:
         if market_ticker not in self.books:
             self.books[market_ticker] = CryptoOrderBook()
             self.books[market_ticker].load_snapshot(msg, seq=seq)
+            self._signals[market_ticker] = {}
+            self._dwi_sustained[market_ticker] = None
             logger.info(f"Create New Orderbook for {market_ticker}")
-            logger.info(f"Orderbook Snapshot: {msg}")
-        else:
-            # seems like Kalshi websocket would send snapshot when subscribed to new tocker
-            # the old one would still received it, use this mechanism to smartly delete the old one
-            pass
 
     def process_orderbook_delta(self, response: dict):
         msg = response.get("msg")
@@ -162,45 +187,86 @@ class Crypto15mJob:
         book = self.books[market_ticker]
         book.apply_delta(msg)
 
-        if self.state == 'ready':
-            if self.cfg.entry_dollars <= book.yes_ask <= self.cfg.target_dollars:
-                spread_status = 'TIGHT' if book.yes_spread <= 0.01 else 'MODERATE' if book.yes_spread <= 0.02 else 'RISKY'
-                fillable_contracts = book.ask_depth_up_to('yes', self.cfg.entry_dollars)
-                conviction_contracts = book.depth_at('yes', self.cfg.entry_dollars)
-                take_profit_contracts = book.bid_depth_above('yes', self.cfg.target_dollars)
-                stop_safe_contracts = book.bid_depth_above('yes', self.cfg.stop_loss_dollars)
+        seconds_left = seconds_to_next_15m()
+        if seconds_left > 60 * 10:
+            return
+
+        if not book.is_stable(self.cfg.spread):
+            return
+
+        ts = ts_ms_to_time_str(msg.get("ts_ms"))
+        dwi = book.dollar_weighted_imbalance()
+        ci = book.contract_imbalance()
+        ndi = book.normalized_dollar_imbalance()
+        abs_dwi = abs(dwi)
+        sigs = self._signals.setdefault(market_ticker, {})
+        direction = "YES" if dwi > 0 else "NO"
+
+        def _snap() -> dict:
+            return {
+                "ts": ts,
+                "direction": direction,
+                "dwi": dwi, "ci": ci, "ndi": ndi,
+                "yes_ask": book.yes_ask, "no_ask": book.no_ask,
+                "yes_bid": book.best_yes_bid, "no_bid": book.best_no_bid,
+                "entry_price": book.yes_ask if direction == "YES" else book.no_ask,
+                "side": "yes" if direction == "YES" else "no",
+            }
+
+        # --- Signal 1: |DWI| > 0.5 AND contract imbalance agrees ---
+        if "L1" not in sigs:
+            if abs_dwi > SIGNAL_DWI_THRESHOLD and _same_sign(dwi, ci):
+                sigs["L1"] = _snap()
                 logger.info(
-                    f"BUY YES for {market_ticker} yes_ask: {book.yes_ask} best_yes_bid: {book.best_yes_bid} yes_spread: {book.yes_spread} " +
-                    f"no_ask: {book.no_ask} best_no_bid: {book.best_no_bid} no_spread: {book.no_spread} " +
-                    f"Spread: {spread_status} Fillable <= ${self.cfg.entry_dollars}: {fillable_contracts} Conviction = ${self.cfg.entry_dollars}: {conviction_contracts} " +
-                    f"Take Profit >= ${self.cfg.target_dollars}: {take_profit_contracts} contracts Stop Safe >= ${self.cfg.stop_loss_dollars}: {stop_safe_contracts} contracts"
+                    f"SIGNAL L1 [{market_ticker}] @{ts}  "
+                    f"direction={direction}  DWI={dwi:+.4f} CI={ci:+.4f}  "
+                    f"{book.imbalance_log(ts=ts)}"
                 )
-            elif self.cfg.entry_dollars <= book.no_ask <= self.cfg.target_dollars:
-                spread_status = 'TIGHT' if book.no_spread <= 0.01 else 'MODERATE' if book.no_spread <= 0.02 else 'RISKY'
-                fillable_contracts = book.ask_depth_up_to('no', self.cfg.entry_dollars)
-                conviction_contracts = book.depth_at('no', self.cfg.entry_dollars)
-                take_profit_contracts = book.bid_depth_above('no', self.cfg.target_dollars)
-                stop_safe_contracts = book.bid_depth_above('no', self.cfg.stop_loss_dollars)
+                self._telegram.send(
+                    f"<b>L1 Signal: |DWI|>0.5 + CI agrees @{ts}</b>\n"
+                    f"<b>{market_ticker}</b> -> <b>{direction}</b>\n"
+                    f"DWI={dwi:+.4f}  CI={ci:+.4f}\n"
+                    f"yes={book.best_yes_bid:.2f}/{book.yes_ask:.2f}  "
+                    f"no={book.best_no_bid:.2f}/{book.no_ask:.2f}"
+                )
+                self._try_enter(market_ticker, book, direction, ts, dwi, ci, ndi)
+
+        # --- Signal 2: |DWI| > 0.7 sustained for 60s ---
+        if "L2" not in sigs:
+            sustained_since = self._dwi_sustained.get(market_ticker)
+            now = time.monotonic()
+            if abs_dwi > SIGNAL_DWI_SUSTAINED:
+                if sustained_since is None:
+                    self._dwi_sustained[market_ticker] = now
+                elif now - sustained_since >= SUSTAINED_SECONDS:
+                    sigs["L2"] = _snap()
+                    logger.info(
+                        f"SIGNAL L2 [{market_ticker}] @{ts}  "
+                        f"direction={direction}  DWI={dwi:+.4f} sustained>{SUSTAINED_SECONDS}s"
+                    )
+            else:
+                self._dwi_sustained[market_ticker] = None
+
+        # --- Signal 3: |DWI| > 0.9 ---
+        if "L3" not in sigs:
+            if abs_dwi > SIGNAL_DWI_STRONG:
+                sigs["L3"] = _snap()
                 logger.info(
-                    f"BUY NO for {market_ticker} no_ask: {book.no_ask} best_no_bid: {book.best_no_bid} no_spread: {book.no_spread} " +
-                    f"yes_ask: {book.yes_ask} best_yes_bid: {book.best_yes_bid} yes_spread: {book.yes_spread} " +
-                    f"Spread: {spread_status} Fillable <= ${self.cfg.entry_dollars}: {fillable_contracts} Conviction = ${self.cfg.entry_dollars}: {conviction_contracts} " +
-                    f"Take Profit >= ${self.cfg.target_dollars}: {take_profit_contracts} contracts Stop Safe >= ${self.cfg.stop_loss_dollars}: {stop_safe_contracts} contracts"
+                    f"SIGNAL L3 [{market_ticker}] @{ts}  "
+                    f"direction={direction}  DWI={dwi:+.4f}"
+                )
+
+        # --- Signal 4: All three metrics aligned + |DWI| > 0.5 ---
+        if "L4" not in sigs:
+            if abs_dwi > SIGNAL_COMPOSITE_THRESHOLD and _same_sign(dwi, ci) and _same_sign(dwi, ndi):
+                sigs["L4"] = _snap()
+                logger.info(
+                    f"SIGNAL L4 [{market_ticker}] @{ts}  "
+                    f"direction={direction}  DWI={dwi:+.4f} CI={ci:+.4f} NDI={ndi:+.4f}"
                 )
 
     def process_market_ticker(self, response: dict):
-        msg = response.get('msg')
-
-        price_dollars = float(msg.get('price_dollars'))
-        yes_ask_dollars = float(msg.get('yes_ask_dollars'))
-        yes_bid_dollars = float(msg.get('yes_bid_dollars'))
-        no_ask_dollars = 1 - yes_bid_dollars
-        no_bid_dollars = 1 - yes_ask_dollars
-        ts = int(msg.get('ts'))
-        time = msg.get('time')
-
-        # logger.info(f"{msg}")
-        # logger.info(f"[{self.ticker}] Price: ${price_dollars} Yes Ask: ${yes_ask_dollars} Yes Bid: ${yes_bid_dollars} No Ask: ${no_ask_dollars} No Bid: ${no_bid_dollars} TS: {ts} Time: {time}")
+        pass
 
     async def subscribe_next_ticker(self, ws: websockets.WebSocketClientProtocol):
         next_ticker = get_next_15m_market_ticker(self.cfg.series)
@@ -211,245 +277,156 @@ class Crypto15mJob:
         last_closed_ticker = get_last_closed_15m_market_ticker(self.cfg.series)
         await self._client.ws_delete_markets(ws, self.orderbook_delta_sid, market_ticker=last_closed_ticker)
         logger.info(f"Unsubscribe from last closed ticker: {last_closed_ticker}")
+    
+    async def ticker_cleanup(self, ticker: str):
+        sigs = self._signals.get(ticker, {})
+        trade = self._trades.get(ticker)
+        market = await self._client.get_market(ticker)
+        balance = await self._client.get_balance()
 
-    def attempt_buy(self, response: dict):
-        msg = response.get('msg')
-        price_dollars = float(msg.get('price_dollars'))
-        yes_ask_dollars = float(msg.get('yes_ask_dollars'))
-        yes_bid_dollars = float(msg.get('yes_bid_dollars'))
-        no_ask_dollars = 1 - yes_bid_dollars
-        no_bid_dollars = 1 - yes_ask_dollars
-        ts = int(msg.get('ts'))
-        time = msg.get('time')
-
-        yes_in_zone = self.cfg.entry_dollars <= yes_ask_dollars <= self.cfg.target_dollars
-        no_in_zone = self.cfg.entry_dollars <= no_ask_dollars <= self.cfg.target_dollars
-        spread = yes_ask_dollars - yes_bid_dollars
-
-        if yes_in_zone:
-            # try to buy yes
-            pass
-        
-        if no_in_zone:
-            # try to buy no
-            pass
-
-        return None
-
-    async def _tick(self, ticker: str, secs_left: float, market: dict):
-        if self._active_trade:
-            if self._active_trade.get("status") == "sell_resting":
-                await self._check_stop_loss(ticker, market)
+        if not market or market.get("status") != "finalized":
+            logger.error(f"Market {ticker} not finalized yet")
+            self._telegram.send(
+                f"Market {ticker} not finalized — cannot compute result\n" + 
+                f"Current balance: ${balance:.2f}")
+            self._cleanup_state(ticker)
             return
 
-        yes_ask = market.get("yes_ask_dollars")
-        yes_bid = market.get("yes_bid_dollars")
-        no_ask  = market.get("no_ask_dollars")
-        no_bid  = market.get("no_bid_dollars")
+        result = market.get("result")  # "yes" or "no"
+        sig_names = sorted(sigs.keys())
+        logger.info(f"END OF WINDOW [{ticker}]  result={result}  signals={sig_names}")
 
-        yes_price = float(yes_ask)
-        no_price = float(no_ask)
+        lines = [f"<b>Window: {ticker}</b>", f"Result: <b>{result.upper()}</b>"]
 
-        yes_in_zone = self.cfg.entry_dollars <= yes_price <= self.cfg.target_dollars
-        no_in_zone  = self.cfg.entry_dollars <= no_price  <= self.cfg.target_dollars
+        # --- Actual trade (L1) ---
+        if trade:
+            side = trade["side"]
+            entry = float(trade["entry_price"])
+            won = (side == result)
+            pnl = ((1.0 - entry) if won else -entry) * self.cfg.count
+            pnl_label = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
 
-        logger.info(f"[{ticker}] yes_bid={yes_bid}$ yes_ask={yes_ask}$ no_bid={no_bid}$ no_ask={no_ask}$ yes_in_zone={yes_in_zone} no_in_zone={no_in_zone}")
+            order_id = trade.get("order_id")
+            order_final_status = trade.get("order_status")
+            if order_id:
+                order = await self._client.get_order(order_id)
+                if order:
+                    order_final_status = order.get("status")
 
-        if yes_in_zone or no_in_zone:
-            side_label = f"YES={yes_ask}$ IN ZONE" if yes_in_zone else f"NO={no_ask}$ IN ZONE"
+            lines.append("")
+            lines.append(f"<b>ACTUAL TRADE (L1)</b>")
+            lines.append(f"  {side.upper()} @ ${entry:.2f} x{self.cfg.count}")
+            lines.append(f"  Order: {order_id} ({order_final_status})")
+            lines.append(f"  P&L: <b>{pnl_label} ({'WIN' if won else 'LOSS'})</b>")
+
             logger.info(
-                f"{ticker}  YES bid={yes_bid}$ ask={yes_ask}$  "
-                f"NO bid={no_bid}$ ask={no_ask}$  "
-                f"{secs_left:.0f}s left  ✓ {side_label}"
+                f"TRADE [{ticker}] {side.upper()} @ ${entry:.2f}  "
+                f"result={result}  {'WIN' if won else 'LOSS'}  pnl={pnl_label}  "
+                f"order={order_id} ({order_final_status})"
             )
-            side = "yes" if yes_in_zone else "no"
-            ask_price = yes_ask if yes_in_zone else no_ask
-            await self._enter(ticker, side, ask_price, secs_left)
         else:
-            logger.debug(
-                f"{ticker}  YES ask={yes_ask}$  NO ask={no_ask}$  "
-                f"{secs_left:.0f}s left  "
-                f"(want {self.cfg.entry_dollars}$)"
+            lines.append("")
+            lines.append("No trade placed")
+
+        # --- All signals (actual + hypothetical) ---
+        lines.append("")
+        lines.append("<b>Signal Details:</b>")
+        for level in ["L1", "L2", "L3", "L4"]:
+            snap = sigs.get(level)
+            if not snap:
+                lines.append(f"  {level}: not fired")
+                continue
+
+            s_side = snap["side"]
+            s_entry = snap["entry_price"]
+            s_won = (s_side == result)
+            s_pnl = ((1.0 - s_entry) if s_won else -s_entry) * self.cfg.count
+            s_pnl_label = f"+${s_pnl:.2f}" if s_pnl >= 0 else f"-${abs(s_pnl):.2f}"
+            is_actual = (level == "L1" and trade)
+
+            lines.append(
+                f"  {level}: {snap['direction']} @ ${s_entry:.2f} "
+                f"[{s_pnl_label} {'WIN' if s_won else 'LOSS'}] "
+                f"{'(TRADED)' if is_actual else '(hypothetical)'}"
+            )
+            lines.append(
+                f"    @{snap['ts']}  DWI={snap['dwi']:+.4f} CI={snap['ci']:+.4f} NDI={snap['ndi']:+.4f}"
             )
 
-    # ── Order-status polling (REST, every ORDER_CHECK_INTERVAL seconds) ───
+        lines.append(f"Current balance: ${balance:.2f}")
+        self._telegram.send("\n".join(lines))
+        self._cleanup_state(ticker)
 
-    async def _poll_order_status(self, ticker: str):
-        if not self._active_trade:
+    def _cleanup_state(self, ticker: str):
+        self.books.pop(ticker, None)
+        self._signals.pop(ticker, None)
+        self._dwi_sustained.pop(ticker, None)
+        self._trades.pop(ticker, None)
+
+    # ── Entry (hold-to-expiry) ───────────────────────────────────────────
+
+    def _try_enter(
+        self, ticker: str, book: CryptoOrderBook,
+        direction: str, ts: str,
+        dwi: float, ci: float, ndi: float,
+    ):
+        """Attempt a trade on L1 signal — buy and hold until settlement."""
+        if ticker in self._trades:
+            logger.info(f"SKIP ENTRY [{ticker}] — already traded this window")
             return
 
-        status = self._active_trade.get("status")
+        if direction == "YES":
+            side = "yes"
+            entry_price = f"{book.yes_ask:.2f}"
+        else:
+            side = "no"
+            entry_price = f"{book.no_ask:.2f}"
 
-        if status == "buy_resting":
-            order_id = self._active_trade["buy_order"]["order_id"]
-            buy_order = await self._client.get_order(order_id)
-            if buy_order and buy_order.get("status") != "resting":
-                logger.info(f"[{self.cfg.series}] {ticker} Buy order filled")
-                self._active_trade["status"] = "buy_executed"
-                await self.take_profit_leave(
-                    ticker,
-                    self._active_trade["side"],
-                    self._active_trade["entry_price"],
-                )
-
-        elif status == "sell_resting":
-            order_id = self._active_trade["sell_order"]["order_id"]
-            sell_order = await self._client.get_order(order_id)
-            if sell_order and sell_order.get("status") == "executed":
-                logger.info(f"[{self.cfg.series}] {ticker} Sell order filled")
-                await self._telegram.send(
-                    f"✅Take profit {ticker} {self._active_trade['side']} "
-                    f"@ {self._active_trade['entry_price']}¢ "
-                    f"[{sell_order.get('order_id')}] on "
-                    f"{convert_utc_to_ny(sell_order.get('created_time'))}"
-                )
-                self._active_trade = None
-
-    # ── Stop-loss check (uses WS market data, no REST call) ──────────────
-
-    async def _check_stop_loss(self, ticker: str, market: dict):
-        if not self._active_trade or self._active_trade.get("status") != "sell_resting":
+        entry_float = float(entry_price)
+        if entry_float >= 0.95:
+            logger.info(f"SKIP ENTRY [{ticker}] {side} @ ${entry_price} — price too high, limited upside")
             return
 
-        side = self._active_trade["side"]
-        stop_loss_price = self._active_trade.get("stop_loss_price")
+        self._trades[ticker] = {
+            "side": side,
+            "direction": direction,
+            "entry_price": entry_price,
+            "signal": "L1_DWI_CONTRACT",
+            "signal_ts": ts,
+            "dwi": dwi,
+            "ci": ci,
+            "ndi": ndi,
+            "order_id": None,
+            "order_status": None,
+        }
+        logger.info(f"ENTERING [{ticker}] {side.upper()} @ ${entry_price}")
+        asyncio.get_event_loop().create_task(self._enter(ticker))
 
-        if side == "yes":
-            current_price = float(market.get("yes_ask_dollars", "1.00"))
-            current_bid = market.get("yes_bid_dollars")
-        else:
-            current_price = float(market.get("no_ask_dollars", "1.00"))
-            current_bid = market.get("no_bid_dollars")
+    async def _enter(self, ticker: str):
+        trade = self._trades.get(ticker)
+        if not trade:
+            return
 
-        if current_price < stop_loss_price:
-            await self._stop_loss_exit(ticker, current_bid)
-
-    # ── Entry ─────────────────────────────────────────────────────────────
-
-    async def _enter(self, ticker: str, side: str, ask_price: str, secs_left: float):
-        logger.info(f"[{ticker}] {side.upper()} @ {ask_price}$ {secs_left:.0f}s left — entering")
+        side = trade["side"]
+        ask_price = trade["entry_price"]
+        logger.info(f"[{ticker}] {side.upper()} @ {ask_price}$ — placing order")
 
         buy = None
         if side == 'yes':
             buy = await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, yes_price_dollars=ask_price)
         else:
             buy = await self._client.place_order(ticker, side, action="buy", count=self.cfg.count, no_price_dollars=ask_price)
+
         if not buy:
             logger.error(f"Buy order failed for {ticker} {side}")
+            trade["order_status"] = "failed"
             return
 
-        if buy.get("status") == "resting":
-            logger.error(f"Buy order {buy.get('order_id')} is resting for {ticker} {side}")
-            await self._telegram.send(f"⏳Pending {ticker} {side} @ {ask_price}¢ [{buy.get('order_id')}] on {convert_utc_to_ny(buy.get('created_time'))}")
-            self._active_trade = {
-                "status": "buy_resting",
-                "side": side,
-                "entry_price": ask_price,
-                "buy_order": buy
-            }
-            return
+        trade["order_id"] = buy.get("order_id")
+        trade["order_status"] = buy.get("status")
 
-        self._active_trade = {
-            "status": "buy_executed",
-            "side": side,
-            "entry_price": ask_price,
-            "buy_order": buy
-        }
-        await self.take_profit_leave(ticker, side, ask_price)
-
-    async def take_profit_leave(self, ticker: str, side: str, start_price: str):
-        env_tag = "[DEMO]" if self._use_demo else "[LIVE]"
-        start_price_float = float(start_price)
-        take_profit_price = f'{min(start_price_float + 0.05, 0.99):.2f}'
-
-        sell = None
-        if side == 'yes':
-            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, yes_price_dollars=take_profit_price)
-        else:
-            sell = await self._client.place_order(ticker, side, action="sell", count=self.cfg.count, no_price_dollars=take_profit_price)
-
-        if sell.get("status") == "executed":
-            await self._telegram.send(f"✅Take profit {ticker} {side} @ {take_profit_price}¢ [{sell.get('order_id')}] on {convert_utc_to_ny(sell.get('created_time'))}")
-            self._active_trade = None
-            return
-
-        await self._telegram.send(
-            f"<b>[{ticker}] Scalp Signal {env_tag}</b>\n"
-            f"<b>{side.upper()}</b> <b>{start_price}$</b> → <b>{take_profit_price}$</b>\n"
-            f"Counts: {self.cfg.count} | cost ~${start_price_float * self.cfg.count:.2f}\n"
-            f"Buy order placed @ {convert_utc_to_ny(self._active_trade['buy_order'].get('created_time'))}\n"
-            f"Take profit order placed @ {convert_utc_to_ny(sell.get('created_time'))}\n"
+        self._telegram.send(
+            f"<b>SUCCESSFULLY ENTERED [{ticker}] {side.upper()} @ {ask_price}$ x{self.cfg.count}</b>\n"
+            f"Order: {buy.get('order_id')} ({buy.get('status')})\n"
+            f"Hold to expiry — settles at $1 or $0"
         )
-
-        stop_loss_price = start_price_float - 0.05
-        self._active_trade = {
-            "side": side,
-            "status": "sell_resting",
-            "entry_price": start_price,
-            "sell_order": sell,
-            "stop_loss_price": stop_loss_price,
-        }
-
-    # ── Stop-loss exit ────────────────────────────────────────────────────
-
-    async def _stop_loss_exit(self, ticker: str, current_bid: str):
-        side = self._active_trade.get("side")
-        entry_price = float(self._active_trade.get("entry_price", 0))
-        sell_order = self._active_trade.get("sell_order")
-        sell_id = sell_order.get("order_id")
-
-        # Guard: check if the take-profit already filled before cancelling
-        if sell_id:
-            latest = await self._client.get_order(sell_id)
-            if latest and latest.get("status") == "executed":
-                logger.info(f"[{ticker}] Take-profit already filled — skipping stop loss")
-                await self._telegram.send(
-                    f"✅Take profit {ticker} {side} @ {self._active_trade['entry_price']}¢ "
-                    f"[{sell_id}] on {convert_utc_to_ny(latest.get('created_time'))}"
-                )
-                self._active_trade = None
-                return
-
-        logger.warning(
-            f"[{self.cfg.series}] {ticker} STOP LOSS  {side.upper()} bid={current_bid}¢ "
-            f"≤ stop={self._active_trade['stop_loss_price']}¢ — exiting"
-        )
-
-        if sell_id:
-            cancelled = await self._client.cancel_order(sell_id)
-            if not cancelled:
-                logger.error(
-                    f"Failed to cancel profit-sell {sell_id} for {ticker} "
-                    f"— proceeding with stop sell anyway"
-                )
-                await self._telegram.send(f"❌ Fail to cancel {ticker} {side} @ {entry_price}¢ [{sell_id}] on {convert_utc_to_ny(sell_order.get('created_time'))}")
-
-        stop_loss_price = self._active_trade.get("stop_loss_price")
-        exit_price = f'{stop_loss_price:.2f}'
-        stop_sell = None
-        if side == 'yes':
-            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.count, yes_price_dollars=exit_price)
-        else:
-            stop_sell = await self._client.place_order(ticker, side, "sell", self.cfg.count, no_price_dollars=exit_price)
-
-        if stop_sell.get("status") == "executed":
-            await self._telegram.send(f"❌Take profit {ticker} {self._active_trade['side']} @ {self._active_trade['entry_price']}¢ [{sell_order.get('order_id')}] on {convert_utc_to_ny(sell_order.get('created_time'))}")
-        else:
-            await self._telegram.send(f"❌Stop loss pending {ticker} {side} @ {exit_price}$ [{stop_sell.get('order_id') if stop_sell else 'failed'}]")
-        stop_sell_id = stop_sell.get("order_id", "") if stop_sell else "failed"
-
-        loss_cents = (entry_price - stop_loss_price) * self.cfg.count
-        logger.warning(
-            f"[{self.cfg.series}] {ticker} stop-sell placed @ {exit_price}$  id={stop_sell_id}  "
-            f"loss ~${loss_cents:.2f}"
-        )
-
-        env_tag = " [DEMO]" if self._use_demo else ""
-        await self._telegram.send(
-            f"<b>[{self.cfg.series}] Stop Loss Hit{env_tag}</b>\n"
-            f"Market: {ticker}\n"
-            f"Side: {side.upper()} | Entry: {entry_price}$ → Stop: {exit_price}$\n"
-            f"Loss: ~${loss_cents:.2f}  |  order={stop_sell_id}"
-        )
-
-        self._active_trade = None

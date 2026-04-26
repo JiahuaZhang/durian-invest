@@ -1,10 +1,8 @@
 """
-Kalshi BTC 15-min scalp bot.
+Kalshi BTC 15-min orderbook imbalance strategy.
 
-Strategy: follow the conviction trend — when either YES or NO has an ask in the
-85-92¢ zone, the market has 85-92% confidence it will resolve that way.  Buy
-that side at market ask, place a resting limit sell at 97¢, and exit via stop
-loss at 88¢ if the bid turns against us.
+Streams the order book via WebSocket and measures dollar-weighted imbalance
+to follow the dominant side when conviction is strong and spreads are tight.
 
 Required env vars:
   use-demo: false  →  KALSHI_API_KEY_ID + KALSHI_PRIVATE_KEY       (production)
@@ -58,10 +56,9 @@ class KalshiCryptoStrategy(TradingStrategy):
 
         job_cfg = CryptoJobConfig(
             series=self.cfg.series,
-            entry_dollars=self.cfg.entry_dollars,
-            target_dollars=self.cfg.target_dollars,
-            stop_loss_dollars=self.cfg.stop_loss_dollars,
             count=self.cfg.count,
+            spread=self.cfg.spread,
+            imbalance=self.cfg.imbalance,
         )
         self._job: Crypto15mJob = Crypto15mJob(job_cfg, self._client, self._db, self._telegram, self.cfg.use_demo)
 
@@ -69,8 +66,7 @@ class KalshiCryptoStrategy(TradingStrategy):
         logger.info(
             f"KalshiCrypto initialized {env_tag} | "
             f"series={self.cfg.series} | "
-            f"entry {self.cfg.entry_dollars}$ → "
-            f"sell@{self.cfg.target_dollars}$ stop@{self.cfg.stop_loss_dollars}$ | "
+            f"spread<={self.cfg.spread} imbalance>={self.cfg.imbalance} | "
             f"count={self.cfg.count}"
         )
 

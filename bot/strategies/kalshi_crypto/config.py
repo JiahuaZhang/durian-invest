@@ -4,10 +4,9 @@ from dataclasses import dataclass
 @dataclass
 class CryptoJobConfig:
     series: str
-    entry_dollars: float
-    target_dollars: float
-    stop_loss_dollars: float
     count: int
+    spread: float = 0.05
+    imbalance: float = 0.50
 
 
 @dataclass
@@ -17,10 +16,9 @@ class BtcScalpConfig:
     enabled: bool = False
     use_demo: bool = False
     series: str = 'KXBTC15M'
-    entry_dollars: float = 0.92
-    target_dollars: float = 0.97
-    stop_loss_dollars: float = 0.88
     count: int = 1
+    spread: float = 0.05
+    imbalance: float = 0.50
     subaccount: int = 0
     scan_interval_seconds: int = 30
     supabase_url: str = ''
@@ -33,13 +31,12 @@ class BtcScalpConfig:
         from strategies.config_loader import load_config
         c = load_config('kalshi_crypto')
         kalshi = c.get('kalshi', {})
-        scalp = c.get('scalp', {})
+        strategy = c.get('strategy', {})
         supabase = c.get('supabase', {})
         telegram = c.get('telegram', {})
 
         use_demo = str(kalshi.get('use-demo', 'false')).lower() == 'true'
 
-        # config_loader already resolved ${ENV_VAR} substitutions from common.yml
         if use_demo:
             api_key_id  = kalshi.get('demo-api-key-id', '')
             private_key = kalshi.get('demo-private-key', '')
@@ -53,11 +50,10 @@ class BtcScalpConfig:
             enabled=str(c.get('enabled', 'false')).lower() == 'true',
             use_demo=use_demo,
             series=c.get('series', 'KXBTC15M'),
-            entry_dollars=float(scalp.get('entry-dollars', 0.92)),
-            target_dollars=float(scalp.get('target-dollars', 0.97)),
-            stop_loss_dollars=float(scalp.get('stop-loss-dollars', 0.88)),
-            count=int(scalp.get('count', 1)),
-            subaccount=int(scalp.get('subaccount', 0)),
+            count=int(strategy.get('count', 1)),
+            spread=float(strategy.get('spread', 0.05)),
+            imbalance=float(strategy.get('imbalance', 0.50)),
+            subaccount=int(strategy.get('subaccount', 0)),
             scan_interval_seconds=int(c.get('scan-interval-seconds', 30)),
             supabase_url=supabase.get('url', ''),
             supabase_key=supabase.get('service-key', ''),

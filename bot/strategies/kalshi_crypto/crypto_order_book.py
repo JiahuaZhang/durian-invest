@@ -187,6 +187,139 @@ class CryptoOrderBook:
         top = sorted(levels.items(), reverse=True)[:limit]
         return [(_to_dollars(p), q) for p, q in top]
 
+    # ── Imbalance / conviction metrics ─────────────────────────────
+
+    def dollar_volume(self, side: Side) -> float:
+        """
+        Sum of price * qty across all bids for one side.
+        Represents total dollar commitment — a $0.95 bid for 100 contracts
+        counts 20x more than a $0.05 bid for 100 contracts.
+        """
+        levels = self.yes if side == "yes" else self.no
+        return sum(p * q for p, q in levels.items()) / 10_000
+
+    def dollar_weighted_imbalance(self) -> float:
+        """
+        Full-book dollar-weighted imbalance.
+
+        Returns -1.0 (all NO) to +1.0 (all YES).  Near 0 = balanced.
+        """
+        yes_vol = self.dollar_volume("yes")
+        no_vol = self.dollar_volume("no")
+        total = yes_vol + no_vol
+        if total < ZERO_EPS:
+            return 0.0
+        return (yes_vol - no_vol) / total
+
+    def contract_imbalance(self) -> float:
+        """
+        Raw contract-count imbalance (no price weighting).
+
+        Returns -1.0 (all NO) to +1.0 (all YES).
+        Price-neutral: a 100-contract YES bid at $0.05 counts the same
+        as a 100-contract NO bid at $0.95.
+        """
+        yes_qty = sum(self.yes.values())
+        no_qty = sum(self.no.values())
+        total = yes_qty + no_qty
+        if total < ZERO_EPS:
+            return 0.0
+        return (yes_qty - no_qty) / total
+
+    def top_book_imbalance(self, depth: float = 0.05) -> float:
+        """
+        Contract imbalance near each side's own best bid.
+
+        Compares depth within *depth* dollars of each side's best bid.
+        Fully price-neutral — each side is measured relative to its own
+        top-of-book, so the current market price doesn't bias the result.
+
+        Returns -1.0 (all NO) to +1.0 (all YES).
+        """
+        if not self.yes or not self.no:
+            return 0.0
+        d = round(depth * 10_000)
+
+        yes_top = max(self.yes)
+        yes_floor = yes_top - d
+        yes_near = sum(q for p, q in self.yes.items() if p >= yes_floor)
+
+        no_top = max(self.no)
+        no_floor = no_top - d
+        no_near = sum(q for p, q in self.no.items() if p >= no_floor)
+
+        total = yes_near + no_near
+        if total < ZERO_EPS:
+            return 0.0
+        return (yes_near - no_near) / total
+
+    def normalized_dollar_imbalance(self) -> float:
+        """
+        Dollar volume normalized by best bid price.
+
+        Divides each side's dollar_volume by its best bid, converting to
+        "equivalent contracts at top-of-book".  Removes the inherent bias
+        where the higher-priced side always dominates raw dollar volume.
+
+        Returns -1.0 (all NO) to +1.0 (all YES).
+        """
+        yes_bid = self.best_yes_bid
+        no_bid = self.best_no_bid
+        if yes_bid < ZERO_EPS or no_bid < ZERO_EPS:
+            return 0.0
+        yes_norm = self.dollar_volume("yes") / yes_bid
+        no_norm = self.dollar_volume("no") / no_bid
+        total = yes_norm + no_norm
+        if total < ZERO_EPS:
+            return 0.0
+        return (yes_norm - no_norm) / total
+
+    def best_bid_imbalance(self) -> float:
+        """
+        Top-of-book imbalance: best_yes_bid - (1 - best_no_bid).
+
+        Positive = YES-side pressure, negative = NO-side pressure.
+        When both sides have perfect balance, this is 0.
+        """
+        return round(self.best_yes_bid - (1.0 - self.best_no_bid), 4)
+
+    def is_stable(self, max_spread: float = 0.05) -> bool:
+        """True when both yes and no spreads are at or below *max_spread*."""
+        return self.yes_spread <= max_spread and self.no_spread <= max_spread
+
+    def get_stats(self, ts: str) -> dict:
+        return {
+            'time': ts,
+            'dollar_weighted_imbalance': self.dollar_weighted_imbalance(),
+            'contract_imbalance': self.contract_imbalance(),
+            'top_book_imbalance': self.top_book_imbalance(),
+            'normalized_dollar_imbalance': self.normalized_dollar_imbalance(),
+            'best_bid_imbalance': self.best_bid_imbalance(),
+            'yes_spread': self.yes_spread,
+            'no_spread': self.no_spread,
+            'yes_bid': self.best_yes_bid,
+            'no_bid': self.best_no_bid,
+            'yes_ask': self.yes_ask,
+            'no_ask': self.no_ask,
+            'yes_volume': self.dollar_volume('yes'),
+            'no_volume': self.dollar_volume('no'),
+            'yes_levels': len(self.yes),
+        }
+
+    def imbalance_log(self, ts: str = None) -> str:
+        ci = self.contract_imbalance()
+        tb = self.top_book_imbalance()
+        nd = self.normalized_dollar_imbalance()
+        bb = self.best_bid_imbalance()
+        sentiment = "YES" if ci > 0 and tb > 0 and nd > 0 else "NO" if ci < 0 and tb < 0 and nd < 0 else "MIXED"
+        return (
+            f"[{self.market_ticker}] @{ts}  sentiment={sentiment} "
+            f"contract_imb={ci:+.4f} top_book_imb={tb:+.4f} norm_dollar_imb={nd:+.4f} best_bid_imb={bb:+.4f} "
+            f"dollar_weighted_imb={self.dollar_weighted_imbalance():+.4f} yes_vol=${self.dollar_volume('yes'):.2f} no_vol=${self.dollar_volume('no'):.2f} "
+            f"yes={self.best_yes_bid:.4f}/{self.yes_ask:.4f}({self.yes_spread:.4f}) "
+            f"no={self.best_no_bid:.4f}/{self.no_ask:.4f}({self.no_spread:.4f}) "
+        )
+
     # ── Summary / debug ────────────────────────────────────────────
 
     def summary(self) -> dict:
@@ -201,6 +334,13 @@ class CryptoOrderBook:
             "no_spread": self.no_spread,
             "yes_levels": len(self.yes),
             "no_levels": len(self.no),
+            "contract_imbalance": round(self.contract_imbalance(), 4),
+            "top_book_imbalance": round(self.top_book_imbalance(), 4),
+            "normalized_dollar_imbalance": round(self.normalized_dollar_imbalance(), 4),
+            "best_bid_imbalance": self.best_bid_imbalance(),
+            "yes_dollar_volume": round(self.dollar_volume("yes"), 2),
+            "no_dollar_volume": round(self.dollar_volume("no"), 2),
+            "stable": self.is_stable(),
         }
 
     def __repr__(self) -> str:

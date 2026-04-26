@@ -1,7 +1,8 @@
-# Kalshi BTC 15-min scalp bot
+# Kalshi BTC 15-min orderbook imbalance bot
 #
-# Strategy: buy YES when ask ≤ entry-dollars, limit sell at target-dollars.
-# No external price feeds — Kalshi orderbook only.
+# Strategy: follow conviction — measure dollar-weighted order book
+# imbalance and trade in the direction of the heavier side once
+# both spreads are tight enough.
 #
 # Required .env:
 #   KALSHI_API_KEY_ID, KALSHI_PRIVATE_KEY
@@ -20,9 +21,8 @@ kalshi:
 series: KXBTC15M
 scan-interval-seconds: 2
 
-scalp:
-  entry-dollars: 0.92       # only enter when ask ≤ this (the "92¢ conviction zone")
-  target-dollars: 0.97      # place resting limit sell at this price
-  stop-loss-dollars: 0.88   # exit if bid drops to or below this after entry
-  count: 1          # contracts per trade
-  subaccount: 0         # 0 = primary account; 1-32 = subaccount number (fill in after creating)
+strategy:
+  spread: 0.05           # max acceptable spread — skip when wider (book still forming)
+  imbalance: 0.80        # min |imbalance()| to flag a signal (0–1 scale)
+  count: 1               # contracts per trade
+  subaccount: 0          # 0 = primary account; 1-32 = subaccount number
