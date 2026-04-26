@@ -229,7 +229,7 @@ class Crypto15mJob:
                     f"yes={book.best_yes_bid:.2f}/{book.yes_ask:.2f}  "
                     f"no={book.best_no_bid:.2f}/{book.no_ask:.2f}"
                 )
-                self._try_enter(market_ticker, book, direction, ts, dwi, ci, ndi)
+                self._try_enter_reverse(market_ticker, book, direction, ts, dwi, ci, ndi)
 
         # --- Signal 2: |DWI| > 0.7 sustained for 60s ---
         if "L2" not in sigs:
@@ -365,22 +365,23 @@ class Crypto15mJob:
 
     # ── Entry (hold-to-expiry) ───────────────────────────────────────────
 
-    def _try_enter(
+    def _try_enter_reverse(
         self, ticker: str, book: CryptoOrderBook,
         direction: str, ts: str,
         dwi: float, ci: float, ndi: float,
     ):
-        """Attempt a trade on L1 signal — buy and hold until settlement."""
+        """Attempt a contrarian trade — fade the L1 signal direction."""
         if ticker in self._trades:
             logger.info(f"SKIP ENTRY [{ticker}] — already traded this window")
             return
 
+        # Contrarian: signal says YES → buy NO, signal says NO → buy YES
         if direction == "YES":
-            side = "yes"
-            entry_price = f"{book.yes_ask:.2f}"
-        else:
             side = "no"
             entry_price = f"{book.no_ask:.2f}"
+        else:
+            side = "yes"
+            entry_price = f"{book.yes_ask:.2f}"
 
         entry_float = float(entry_price)
         if entry_float >= 0.95:
