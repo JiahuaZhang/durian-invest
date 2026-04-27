@@ -222,14 +222,14 @@ class Crypto15mJob:
                     f"direction={direction}  DWI={dwi:+.4f} CI={ci:+.4f}  "
                     f"{book.imbalance_log(ts=ts)}"
                 )
-                self._telegram.send(
-                    f"<b>L1 Signal: |DWI|>0.5 + CI agrees @{ts}</b>\n"
-                    f"<b>{market_ticker}</b> -> <b>{direction}</b>\n"
-                    f"DWI={dwi:+.4f}  CI={ci:+.4f}\n"
-                    f"yes={book.best_yes_bid:.2f}/{book.yes_ask:.2f}  "
-                    f"no={book.best_no_bid:.2f}/{book.no_ask:.2f}"
-                )
-                # self._try_enter(market_ticker, book, direction, ts, dwi, ci, ndi)
+                # self._telegram.send(
+                #     f"<b>L1 Signal: |DWI|>0.5 + CI agrees @{ts}</b>\n"
+                #     f"<b>{market_ticker}</b> -> <b>{direction}</b>\n"
+                #     f"DWI={dwi:+.4f}  CI={ci:+.4f}\n"
+                #     f"yes={book.best_yes_bid:.2f}/{book.yes_ask:.2f}  "
+                #     f"no={book.best_no_bid:.2f}/{book.no_ask:.2f}"
+                # )
+                self._try_enter(market_ticker, book, direction, ts, dwi, ci, ndi, reverse=True)
 
         # --- Signal 2: |DWI| > 0.7 sustained for 60s ---
         if "L2" not in sigs:
@@ -444,8 +444,8 @@ class Crypto15mJob:
         trade["order_id"] = buy.get("order_id")
         trade["order_status"] = buy.get("status")
 
-        self._telegram.send(
-            f"<b>SUCCESSFULLY ENTERED [{ticker}] {side.upper()} @ {ask_price}$ x{self.cfg.count}</b>\n"
-            f"Order: {buy.get('order_id')} ({buy.get('status')})\n"
-            f"Hold to expiry — settles at $1 or $0"
-        )
+        # self._telegram.send(
+        #     f"<b>SUCCESSFULLY ENTERED [{ticker}] {side.upper()} @ {ask_price}$ x{self.cfg.count}</b>\n"
+        #     f"Order: {buy.get('order_id')} ({buy.get('status')})\n"
+        #     f"Hold to expiry — settles at $1 or $0"
+        # )
