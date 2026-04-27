@@ -363,7 +363,10 @@ class Crypto15mJob:
             )
 
         if self._db:
+            logger.info(f"Logging ticker stats: {stats_data}")
             await self._db.log_ticker_stats(stats_data)
+        else:
+            logger.info("No DB connected, skipping ticker stats logging")
 
         lines.append(f"Current balance: ${balance:.2f}")
         self._telegram.send("\n".join(lines))

@@ -30,6 +30,7 @@ export function Sidebar() {
         { icon: PieChart, label: 'COT Report', to: '/cot' },
         { icon: BarChart3, label: 'Depth (DOM)', to: '/dom/btc' },
         { icon: Bitcoin, label: 'Kalshi BTC 15m', to: '/kalshi/bitcoin' },
+        { icon: TrendingUp, label: 'Kalshi x Binance', to: '/kalshi/bitcoin-binance' },
         { icon: History, label: 'History', to: '/history' },
         { icon: Zap, label: 'Unusual Options', to: '/option/unusual/barchart' },
         { icon: TrendingUp, label: 'Option Chain', to: '/option/alpaca' },

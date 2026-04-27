@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.crypto_15m_stats (
     l2_net_profit NUMERIC,
     l3_detected_time TEXT,
     l3_net_profit NUMERIC,
-    l4_detect_time TEXT,
+    l4_detected_time TEXT,
     l4_net_profit NUMERIC,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
