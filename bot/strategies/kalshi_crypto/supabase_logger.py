@@ -126,3 +126,15 @@ class SupabaseLogger:
         except Exception as e:
             logger.error(f"Failed to fetch open bets: {e}")
             return []
+
+    async def log_ticker_stats(self, stats: Dict[str, Any]):
+        """Upsert 15m crypto stats."""
+        try:
+            await self._run_sync(
+                lambda: self.client.table("crypto_15m_stats")
+                .upsert(stats)
+                .execute()
+            )
+            logger.info(f"Logged 15m stats for {stats.get('ticker')}")
+        except Exception as e:
+            logger.error(f"Failed to log 15m stats for {stats.get('ticker')}: {e}")

@@ -200,7 +200,7 @@ class Crypto15mJob:
         ndi = book.normalized_dollar_imbalance()
         abs_dwi = abs(dwi)
         sigs = self._signals.setdefault(market_ticker, {})
-        direction = "YES" if dwi > 0 else "NO"
+        direction = "yes" if dwi > 0 else "no"
 
         def _snap() -> dict:
             return {
@@ -229,7 +229,7 @@ class Crypto15mJob:
                     f"yes={book.best_yes_bid:.2f}/{book.yes_ask:.2f}  "
                     f"no={book.best_no_bid:.2f}/{book.no_ask:.2f}"
                 )
-                self._try_enter_reverse(market_ticker, book, direction, ts, dwi, ci, ndi)
+                # self._try_enter(market_ticker, book, direction, ts, dwi, ci, ndi)
 
         # --- Signal 2: |DWI| > 0.7 sustained for 60s ---
         if "L2" not in sigs:
@@ -331,16 +331,25 @@ class Crypto15mJob:
         # --- All signals (actual + hypothetical) ---
         lines.append("")
         lines.append("<b>Signal Details:</b>")
+        
+        stats_data = {"ticker": ticker}
+        
         for level in ["L1", "L2", "L3", "L4"]:
             snap = sigs.get(level)
             if not snap:
                 lines.append(f"  {level}: not fired")
+                stats_data[f"{level.lower()}_detected_time"] = None
+                stats_data[f"{level.lower()}_net_profit"] = None
                 continue
 
             s_side = snap["side"]
             s_entry = snap["entry_price"]
             s_won = (s_side == result)
             s_pnl = ((1.0 - s_entry) if s_won else -s_entry) * self.cfg.count
+
+            stats_data[f"{level.lower()}_detected_time"] = snap["ts"]
+            stats_data[f"{level.lower()}_net_profit"] = s_pnl
+
             s_pnl_label = f"+${s_pnl:.2f}" if s_pnl >= 0 else f"-${abs(s_pnl):.2f}"
             is_actual = (level == "L1" and trade)
 
@@ -352,6 +361,9 @@ class Crypto15mJob:
             lines.append(
                 f"    @{snap['ts']}  DWI={snap['dwi']:+.4f} CI={snap['ci']:+.4f} NDI={snap['ndi']:+.4f}"
             )
+
+        if self._db:
+            await self._db.log_ticker_stats(stats_data)
 
         lines.append(f"Current balance: ${balance:.2f}")
         self._telegram.send("\n".join(lines))
@@ -365,23 +377,26 @@ class Crypto15mJob:
 
     # ── Entry (hold-to-expiry) ───────────────────────────────────────────
 
-    def _try_enter_reverse(
+    def _try_enter(
         self, ticker: str, book: CryptoOrderBook,
         direction: str, ts: str,
         dwi: float, ci: float, ndi: float,
+        reverse: bool = False
     ):
         """Attempt a contrarian trade — fade the L1 signal direction."""
         if ticker in self._trades:
             logger.info(f"SKIP ENTRY [{ticker}] — already traded this window")
             return
 
-        # Contrarian: signal says YES → buy NO, signal says NO → buy YES
-        if direction == "YES":
-            side = "no"
-            entry_price = f"{book.no_ask:.2f}"
+        if reverse:
+            if direction == "yes":
+                side = "no"
+            else:
+                side = "yes"
         else:
-            side = "yes"
-            entry_price = f"{book.yes_ask:.2f}"
+            side = direction
+
+        entry_price = f"{book.yes_ask:.2f}" if side == 'yes' else f"{book.no_ask:.2f}"
 
         entry_float = float(entry_price)
         if entry_float >= 0.95:
