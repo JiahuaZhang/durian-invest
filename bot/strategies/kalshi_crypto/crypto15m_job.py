@@ -209,8 +209,8 @@ class Crypto15mJob:
                 "dwi": dwi, "ci": ci, "ndi": ndi,
                 "yes_ask": book.yes_ask, "no_ask": book.no_ask,
                 "yes_bid": book.best_yes_bid, "no_bid": book.best_no_bid,
-                "entry_price": book.yes_ask if direction == "YES" else book.no_ask,
-                "side": "yes" if direction == "YES" else "no",
+                "entry_price": book.yes_ask if direction == "yes" else book.no_ask,
+                "side": "yes" if direction == "yes" else "no",
             }
 
         # --- Signal 1: |DWI| > 0.5 AND contract imbalance agrees ---
@@ -229,7 +229,7 @@ class Crypto15mJob:
                 #     f"yes={book.best_yes_bid:.2f}/{book.yes_ask:.2f}  "
                 #     f"no={book.best_no_bid:.2f}/{book.no_ask:.2f}"
                 # )
-                self._try_enter(market_ticker, book, direction, ts, dwi, ci, ndi, reverse=True)
+                # self._try_enter(market_ticker, book, direction, ts, dwi, ci, ndi, reverse=True)
 
         # --- Signal 2: |DWI| > 0.7 sustained for 60s ---
         if "L2" not in sigs:
