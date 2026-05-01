@@ -46,7 +46,7 @@ const indexTabs = [
   {
     title: 'Index',
     symbols: [
-      { s: 'VIX', d: 'Volatility Index' },
+      { s: 'FXOPEN:VIX', d: 'Volatility Index' },
       { s: 'GVZCLS', d: 'Gold Volatility Index' },
     ],
     originalTitle: 'Index'
