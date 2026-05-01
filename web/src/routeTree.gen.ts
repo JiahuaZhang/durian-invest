@@ -20,6 +20,7 @@ import { Route as OptionCmeRouteImport } from './routes/option.cme'
 import { Route as OptionAlpacaRouteImport } from './routes/option.alpaca'
 import { Route as KalshiBitcoinRouteImport } from './routes/kalshi.bitcoin'
 import { Route as DomBtcRouteImport } from './routes/dom.btc'
+import { Route as ComboKalshiBitcoinRouteImport } from './routes/combo.kalshi-bitcoin'
 import { Route as BotOrbRouteImport } from './routes/bot.orb'
 import { Route as OptionUnusualBarchartRouteImport } from './routes/option.unusual.barchart'
 
@@ -78,6 +79,11 @@ const DomBtcRoute = DomBtcRouteImport.update({
   path: '/dom/btc',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ComboKalshiBitcoinRoute = ComboKalshiBitcoinRouteImport.update({
+  id: '/combo/kalshi-bitcoin',
+  path: '/combo/kalshi-bitcoin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BotOrbRoute = BotOrbRouteImport.update({
   id: '/bot/orb',
   path: '/bot/orb',
@@ -97,6 +103,7 @@ export interface FileRoutesByFullPath {
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
   '/bot/orb': typeof BotOrbRoute
+  '/combo/kalshi-bitcoin': typeof ComboKalshiBitcoinRoute
   '/dom/btc': typeof DomBtcRoute
   '/kalshi/bitcoin': typeof KalshiBitcoinRoute
   '/option/alpaca': typeof OptionAlpacaRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
   '/bot/orb': typeof BotOrbRoute
+  '/combo/kalshi-bitcoin': typeof ComboKalshiBitcoinRoute
   '/dom/btc': typeof DomBtcRoute
   '/kalshi/bitcoin': typeof KalshiBitcoinRoute
   '/option/alpaca': typeof OptionAlpacaRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/news': typeof NewsRoute
   '/overview': typeof OverviewRoute
   '/bot/orb': typeof BotOrbRoute
+  '/combo/kalshi-bitcoin': typeof ComboKalshiBitcoinRoute
   '/dom/btc': typeof DomBtcRoute
   '/kalshi/bitcoin': typeof KalshiBitcoinRoute
   '/option/alpaca': typeof OptionAlpacaRoute
@@ -145,6 +154,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/overview'
     | '/bot/orb'
+    | '/combo/kalshi-bitcoin'
     | '/dom/btc'
     | '/kalshi/bitcoin'
     | '/option/alpaca'
@@ -160,6 +170,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/overview'
     | '/bot/orb'
+    | '/combo/kalshi-bitcoin'
     | '/dom/btc'
     | '/kalshi/bitcoin'
     | '/option/alpaca'
@@ -175,6 +186,7 @@ export interface FileRouteTypes {
     | '/news'
     | '/overview'
     | '/bot/orb'
+    | '/combo/kalshi-bitcoin'
     | '/dom/btc'
     | '/kalshi/bitcoin'
     | '/option/alpaca'
@@ -191,6 +203,7 @@ export interface RootRouteChildren {
   NewsRoute: typeof NewsRoute
   OverviewRoute: typeof OverviewRoute
   BotOrbRoute: typeof BotOrbRoute
+  ComboKalshiBitcoinRoute: typeof ComboKalshiBitcoinRoute
   DomBtcRoute: typeof DomBtcRoute
   KalshiBitcoinRoute: typeof KalshiBitcoinRoute
   OptionAlpacaRoute: typeof OptionAlpacaRoute
@@ -278,6 +291,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DomBtcRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/combo/kalshi-bitcoin': {
+      id: '/combo/kalshi-bitcoin'
+      path: '/combo/kalshi-bitcoin'
+      fullPath: '/combo/kalshi-bitcoin'
+      preLoaderRoute: typeof ComboKalshiBitcoinRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/bot/orb': {
       id: '/bot/orb'
       path: '/bot/orb'
@@ -303,6 +323,7 @@ const rootRouteChildren: RootRouteChildren = {
   NewsRoute: NewsRoute,
   OverviewRoute: OverviewRoute,
   BotOrbRoute: BotOrbRoute,
+  ComboKalshiBitcoinRoute: ComboKalshiBitcoinRoute,
   DomBtcRoute: DomBtcRoute,
   KalshiBitcoinRoute: KalshiBitcoinRoute,
   OptionAlpacaRoute: OptionAlpacaRoute,

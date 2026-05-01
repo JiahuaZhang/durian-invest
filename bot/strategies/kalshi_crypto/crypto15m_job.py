@@ -107,7 +107,7 @@ class Crypto15mJob:
                 await asyncio.sleep(1)
             except Exception as e:
                 logger.error(f"WebSocket error: {e}", exc_info=True)
-                await asyncio.sleep(2)
+                await asyncio.sleep(60)
 
     def _reset_scheduler_jobs(self, ws):
         """Replace scheduler jobs with fresh ones pointing at the new WS connection."""

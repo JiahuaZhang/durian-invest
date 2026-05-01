@@ -30,7 +30,7 @@ export function Sidebar() {
         { icon: PieChart, label: 'COT Report', to: '/cot' },
         { icon: BarChart3, label: 'Depth (DOM)', to: '/dom/btc' },
         { icon: Bitcoin, label: 'Kalshi BTC 15m', to: '/kalshi/bitcoin' },
-        { icon: TrendingUp, label: 'Kalshi x Binance', to: '/kalshi/bitcoin-binance' },
+        { icon: TrendingUp, label: 'Kalshi x Binance', to: '/combo/kalshi-bitcoin' },
         { icon: History, label: 'History', to: '/history' },
         { icon: Zap, label: 'Unusual Options', to: '/option/unusual/barchart' },
         { icon: TrendingUp, label: 'Option Chain', to: '/option/alpaca' },
@@ -40,9 +40,7 @@ export function Sidebar() {
     ]
 
     return (
-        <aside un-transition="all" un-duration="300" un-ease-in-out="~" un-bg="white/75" un-border="r slate-200"
-            un-w={isExpanded ? "64" : "20"} un-shadow-xl="~" un-flex="~ col"
-        >
+        <aside un-transition="all" un-duration="300" un-ease-in-out="~" un-border="r slate-200" un-w={isExpanded ? "64" : "20"} un-shadow-xl="~" un-flex="~ col">
             <div un-flex="~ items-center justify-between" un-p="x-4 y-3" un-border='b slate-200'>
                 <div un-flex="~ gap-3  items-center" un-overflow="hidden" un-transition="all" un-duration="300" un-opacity={isExpanded ? "100" : "0"}>
                     <div un-w="8" un-h="8" un-rounded="lg" un-bg-gradient-to="tr" un-from-amber="400" un-to-yellow="400" un-flex="~ items-center justify-center" un-shrink="0">
