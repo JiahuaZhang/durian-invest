@@ -1,6 +1,0 @@
-{
-  "python.defaultInterpreterPath": "bot/.venv/Scripts/python.exe",
-  "python.analysis.extraPaths": [
-    "bot"
-  ]
-}

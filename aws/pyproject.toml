@@ -1,0 +1,12 @@
+[project]
+name = "aws"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.14"
+dependencies = [
+    "ipykernel>=7.2.0",
+    "pysocks>=1.7.1",
+    "python-socks>=2.8.1",
+    "requests>=2.33.1",
+    "websocket-client>=1.9.0",
+]

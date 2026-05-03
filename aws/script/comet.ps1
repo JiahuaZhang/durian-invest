@@ -1,0 +1,1 @@
+C:\Users\大声\AppData\Local\Perplexity\Comet\Application\comet.exe --proxy-server="socks5://127.0.0.1:9090"
