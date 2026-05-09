@@ -1,0 +1,63 @@
+# Polymarket BTC 5-min price divergence + orderbook imbalance bot
+#
+# Strategy: exploit Chainlink feed lag vs Binance/Coinbase,
+# confirmed by Polymarket orderbook imbalance.
+# Source: LunarResearcher article
+#
+# Required .env:
+#   PRIVATE_KEY, CLOB_API_KEY, CLOB_SECRET, CLOB_PASS_PHRASE
+
+name: polymarket-btc-5m
+enabled: true
+
+polymarket:
+  host: https://clob.polymarket.com
+  gamma-host: https://gamma-api.polymarket.com
+  ws-host: wss://ws-subscriptions-clob.polymarket.com/ws/market
+  chain-id: 137
+  signature-type: 0
+
+proxy:
+  # false = never proxy, true = always proxy on local, auto = use proxy on local when port is open
+  enabled: auto
+  host: 127.0.0.1
+  port: 9090
+
+contract:
+  crypto: btc
+  interval-minutes: 5
+
+feeds:
+  binance-symbol: btcusdt
+  coinbase-product: BTC-USD
+  # Chainlink Data Streams BTC/USD (what Polymarket resolves against)
+  chainlink-feed-id: "0x00039d9e45394f473ab1f050a1b963e6b05351e52d71e507509ada0c95ed75b8"
+  chainlink-poll-seconds: 1
+
+signals:
+  # price divergence: exchange avg vs Chainlink
+  divergence-threshold: 50     # USD gap required
+
+  # orderbook imbalance: sum(top N bids) / sum(top N asks)
+  imbalance-bullish: 1.8       # ratio above this = bullish
+  imbalance-bearish: 0.55      # ratio below this = bearish
+  imbalance-levels: 10         # top N price levels to sum
+
+timing:
+  # smart money enters 30-90s after open
+  smart-money-start: 30
+  smart-money-end: 90
+  # our entry window
+  entry-start: 60              # seconds after market open
+  entry-end: 180               # don't enter after this
+
+exit:
+  take-profit: 0.75            # sell shares when price hits this
+  stop-loss: 0.35              # sell shares when price drops to this
+  hold-if-remaining: 60        # hold to resolution if < N seconds left
+
+order:
+  size: 5                      # USD per trade
+
+dry-run: true
+live-trading: false
