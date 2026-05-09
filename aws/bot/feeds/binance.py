@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import time
+from typing import Callable
 
 import websockets
 
@@ -24,9 +25,15 @@ BINANCE_WS_ALT = "wss://stream.binance.us:9443/ws/{symbol}@trade"
 class BinanceFeed:
     """Async Binance BTCUSDT price stream."""
 
-    def __init__(self, symbol: str = "btcusdt", proxy: str | None = None):
+    def __init__(
+        self,
+        symbol: str = "btcusdt",
+        proxy: str | None = None,
+        on_update: Callable[[str, float], None] | None = None
+    ):
         self.symbol = symbol.lower()
         self.proxy = proxy
+        self.on_update = on_update
         self.price: float = 0.0
         self.last_update: float = 0.0
         self._running = False
@@ -50,6 +57,8 @@ class BinanceFeed:
                         msg = json.loads(raw)
                         self.price = float(msg["p"])
                         self.last_update = time.monotonic()
+                        if self.on_update:
+                            self.on_update("binance", self.price)
             except (websockets.ConnectionClosed, ConnectionError) as e:
                 logger.warning(f"Binance WS disconnected: {e}")
                 await asyncio.sleep(1)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Callable
 
 import httpx
 
@@ -29,9 +30,11 @@ class ChainlinkFeed:
         self,
         feed_id: str = BTC_USD_FEED_ID,
         poll_seconds: int = 1,
+        on_update: Callable[[str, float], None] | None = None
     ):
         self.feed_id = feed_id
         self.poll_seconds = poll_seconds
+        self.on_update = on_update
         self.price: float = 0.0
         self.last_update: float = 0.0
         self._running = False
@@ -52,6 +55,8 @@ class ChainlinkFeed:
                     if price and price > 0:
                         self.price = price
                         self.last_update = time.monotonic()
+                        if self.on_update:
+                            self.on_update("chainlink", self.price)
                 except Exception as e:
                     logger.warning(f"Chainlink fetch error: {e}")
                 await asyncio.sleep(self.poll_seconds)

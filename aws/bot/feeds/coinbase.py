@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import time
+from typing import Callable
 
 import websockets
 
@@ -21,8 +22,13 @@ COINBASE_WS = "wss://ws-feed.exchange.coinbase.com"
 class CoinbaseFeed:
     """Async Coinbase BTC-USD price stream."""
 
-    def __init__(self, product: str = "BTC-USD"):
+    def __init__(
+        self,
+        product: str = "BTC-USD",
+        on_update: Callable[[str, float], None] | None = None
+    ):
         self.product = product
+        self.on_update = on_update
         self.price: float = 0.0
         self.last_update: float = 0.0
         self._running = False
@@ -52,6 +58,8 @@ class CoinbaseFeed:
                         if msg.get("type") == "ticker" and "price" in msg:
                             self.price = float(msg["price"])
                             self.last_update = time.monotonic()
+                            if self.on_update:
+                                self.on_update("coinbase", self.price)
             except (websockets.ConnectionClosed, ConnectionError) as e:
                 logger.warning(f"Coinbase WS disconnected: {e}")
                 await asyncio.sleep(1)

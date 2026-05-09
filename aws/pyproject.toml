@@ -1,12 +1,22 @@
 [project]
 name = "aws"
 version = "0.1.0"
-description = "Add your description here"
-requires-python = ">=3.14"
+description = "Polymarket BTC 5-min orderbook imbalance bot"
+requires-python = ">=3.11"
 dependencies = [
+    "httpx[socks]>=0.28.1",
     "ipykernel>=7.2.0",
+    "py-clob-client-v2>=1.0.0",
+    "python-dotenv>=1.1.0",
     "pysocks>=1.7.1",
     "python-socks>=2.8.1",
-    "requests>=2.33.1",
-    "websocket-client>=1.9.0",
+    "pyyaml>=6.0",
+    "requests[socks]>=2.33.1",
+    "socksio>=1.0.0",
+    "structlog>=25.1.0",
+    "tzdata>=2024.1",
+    "websockets>=13.0",
 ]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]

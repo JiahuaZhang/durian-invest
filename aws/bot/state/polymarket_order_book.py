@@ -13,10 +13,11 @@ def _to_dollars(price_int: int) -> float:
 class PolymarketOrderBook:
     """Independent OrderBook class using hash maps for fast updates."""
     
-    __slots__ = ("asset_id", "bids", "asks", "best_bid", "best_ask", "last_update")
+    __slots__ = ("asset_id", "side", "bids", "asks", "best_bid", "best_ask", "last_update")
     
-    def __init__(self, asset_id: str | None = None):
+    def __init__(self, asset_id: str | None = None, side: str = "Yes"):
         self.asset_id = asset_id
+        self.side = side
         self.bids: dict[int, float] = {}
         self.asks: dict[int, float] = {}
         self.best_bid: int = 0
@@ -65,9 +66,15 @@ class PolymarketOrderBook:
                 continue
 
             if side == "BUY":
-                self.bids[price_int] = size
+                if size <= 0:
+                    self.bids.pop(price_int, None)
+                else:
+                    self.bids[price_int] = size
             elif side == "SELL":
-                self.asks[price_int] = size
+                if size <= 0:
+                    self.asks.pop(price_int, None)
+                else:
+                    self.asks[price_int] = size
 
             self.best_bid = _to_int(change.get("best_bid"))
             self.best_ask = _to_int(change.get("best_ask"))
@@ -85,6 +92,19 @@ class PolymarketOrderBook:
             key=lambda x: float(x["price"])
         )
         return {"bids": bids, "asks": asks}
+
+    def get_price(self) -> dict[str, dict[str, float]]:
+        """Return the best bid and ask prices for both sides."""
+        yes_bid = _to_dollars(self.best_bid) if self.best_bid else 0.0
+        yes_ask = _to_dollars(self.best_ask) if self.best_ask else 0.0
+        
+        no_bid = round(1.0 - yes_ask, 4) if yes_ask > 0 else 0.0
+        no_ask = round(1.0 - yes_bid, 4) if yes_bid > 0 else 0.0
+        
+        return {
+            "yes": {"bid": yes_bid, "ask": yes_ask},
+            "no": {"bid": no_bid, "ask": no_ask}
+        }
 
     def render(self, level: int = 10) -> None:
         best_bids = sorted(self.bids.items(), key=lambda x: x[0], reverse=True)[:level]
