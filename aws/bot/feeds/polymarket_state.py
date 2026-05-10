@@ -140,28 +140,35 @@ class PolymarketState:
         self.orderbook.apply(message)
         return self.orderbook.last_update != before
 
+    def render(self, level: int = 10) -> None:
+        binance_gap = self.binance_price - self.chainlink_price
+        coinbase_gap = self.coinbase_price - self.chainlink_price
+        
+        logger.info("\n" + "=" * 50)
+        logger.info(f"Market Slug : {self.slug}")
+        logger.info(f"Chainlink   : ${self.chainlink_price:.2f}")
+        logger.info(f"Binance     : ${self.binance_price:.2f} (Gap: ${binance_gap:+.2f})")
+        logger.info(f"Coinbase    : ${self.coinbase_price:.2f} (Gap: ${coinbase_gap:+.2f})")
+        logger.info("=" * 50)
+        self.orderbook.render(level)
+        imbalance_ratio = self.orderbook.get_imbalance(level)
+        logger.info(f"Imbalance Ratio: {imbalance_ratio:.2f}")
+        logger.info("=" * 50)
+
     def check_entry_signal(
         self,
         *,
         source: PriceSource,
         now_ts: int | None = None,
     ) -> TradeSignal | None:
-        """Return the first aligned divergence + imbalance signal for this window."""
+        """Return the first aligned divergence + imbalance signal."""
         if self.resolved or self.trade or self.signal_snapshot:
-            return None
-
-        remaining = self.seconds_remaining(now_ts)
-        if remaining < self.cfg.exit.hold_if_remaining:
-            return None
-
-        elapsed = self.seconds_elapsed(now_ts)
-        if elapsed < self.cfg.timing.entry_start:
-            return None
-        if elapsed > self.cfg.timing.entry_end:
             return None
 
         if not self.prices_ready:
             return None
+
+        remaining = self.seconds_remaining(now_ts)
 
         signal = get_signal(
             source=source,
