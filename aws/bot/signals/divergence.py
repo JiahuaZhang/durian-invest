@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Literal
 
 from ..state.polymarket_order_book import PolymarketOrderBook
 
 logger = logging.getLogger(__name__)
+
+PriceSource = Literal["binance", "coinbase", "chainlink"]
 
 
 def check_divergence(
@@ -54,25 +57,58 @@ def check_divergence(
         "coinbase_gap": coinbase_gap,
     }
 
-@dataclass
+@dataclass(frozen=True)
 class TradeSignal:
+    """The exact market state and decision that caused an entry signal."""
+    source: PriceSource
     side: str
-    entry_price: float
-    divergence: str
-    imbalance: str
-    ratio: float
+    remaining_seconds: int
+    open_price: float | None
+
+    binance_price: float
+    coinbase_price: float
+    chainlink_price: float
+
     binance_gap: float
     coinbase_gap: float
 
+    divergence: str
+    imbalance: str
+    imbalance_ratio: float
+
+    entry_price: float
+    bid_price: float
+    ask_price: float
+
+    @property
+    def side_label(self) -> str:
+        return "YES" if self.side == "up" else "NO"
+
 
 def get_signal(
-    divergence_data: dict,
+    source: PriceSource,
+    remaining_seconds: int,
+    open_price: float | None,
+    binance_price: float,
+    coinbase_price: float,
+    chainlink_price: float,
     order_book: PolymarketOrderBook,
+    divergence_threshold: float = 50.0,
     imbalance_levels: int = 10,
     bullish_threshold: float = 1.8,
     bearish_threshold: float = 0.55,
 ) -> TradeSignal | None:
+    divergence_data = check_divergence(
+        binance_price,
+        coinbase_price,
+        chainlink_price,
+        threshold=divergence_threshold,
+    )
+
     direction = divergence_data.get("direction")
+    binance_gap = divergence_data.get("binance_gap", 0.0)
+    coinbase_gap = divergence_data.get("coinbase_gap", 0.0)
+
     if not direction:
         return None
 
@@ -94,41 +130,52 @@ def get_signal(
         )
         return None
 
-    binance_gap = divergence_data.get("binance_gap", 0.0)
-    coinbase_gap = divergence_data.get("coinbase_gap", 0.0)
-
     prices = order_book.get_price()
-    yes_ask = prices["yes"]["ask"] or 0.0
-    no_ask = prices["no"]["ask"] or 0.0
-
+    
     if direction == "UP" and imbalance == "BULLISH":
+        side = "up"
+        side_prices = prices["yes"]
+    elif direction == "DOWN" and imbalance == "BEARISH":
+        side = "down"
+        side_prices = prices["no"]
+    else:
         logger.info(
-            "SIGNAL: BUY UP divergence=%s imbalance=%s ratio=%.2f binance_gap=$%+.2f coinbase_gap=$%+.2f",
+            "!!! NO TRADE: divergence=%s binance_gap=$%+2f coinbase_gap=$%+2f but imbalance=%s ratio=%.2f",
             direction,
-            imbalance,
-            ratio,
             binance_gap,
             coinbase_gap,
+            imbalance,
+            ratio
         )
-        return TradeSignal("up", yes_ask, direction, imbalance, ratio, binance_gap, coinbase_gap)
+        return None
 
-    if direction == "DOWN" and imbalance == "BEARISH":
-        logger.info(
-            "SIGNAL: BUY DOWN divergence=%s imbalance=%s ratio=%.2f binance_gap=$%+.2f coinbase_gap=$%+.2f",
-            direction,
-            imbalance,
-            ratio,
-            binance_gap,
-            coinbase_gap,
-        )
-        return TradeSignal("down", no_ask, direction, imbalance, ratio, binance_gap, coinbase_gap)
+    bid_price = side_prices["bid"] or 0.0
+    ask_price = side_prices["ask"] or 0.0
+    entry_price = ask_price
 
     logger.info(
-        "!!! NO TRADE: divergence=%s binance_gap=$%+2f coinbase_gap=$%+2f but imbalance=%s ratio=%.2f",
+        "SIGNAL: BUY %s divergence=%s imbalance=%s ratio=%.2f binance_gap=$%+.2f coinbase_gap=$%+.2f",
         direction,
+        imbalance,
+        ratio,
         binance_gap,
         coinbase_gap,
-        imbalance,
-        ratio
     )
-    return None
+
+    return TradeSignal(
+        source=source,
+        side=side,
+        remaining_seconds=remaining_seconds,
+        open_price=open_price,
+        binance_price=binance_price,
+        coinbase_price=coinbase_price,
+        chainlink_price=chainlink_price,
+        binance_gap=binance_gap,
+        coinbase_gap=coinbase_gap,
+        divergence=direction,
+        imbalance=imbalance,
+        imbalance_ratio=ratio,
+        entry_price=entry_price,
+        bid_price=bid_price,
+        ask_price=ask_price,
+    )
