@@ -43,7 +43,13 @@ def check_imbalance(
         direction: "BULLISH", "BEARISH", or None
     """
     bids = book.get("bids", [])
+    if len(bids) == 0:
+        logger.warning("No bids found in orderbook")
+        return None, None
     asks = book.get("asks", [])
+    if len(asks) == 0:
+        logger.warning("No asks found in orderbook")
+        return None, None
 
     bid_depth = sum(float(b.get("size", 0)) for b in bids[-levels:])
     ask_depth = sum(float(a.get("size", 0)) for a in asks[-levels:])

@@ -37,6 +37,7 @@ class BinanceFeed:
         self.price: float = 0.0
         self.last_update: float = 0.0
         self._running = False
+        self._ws: websockets.WebSocketClientProtocol | None = None
 
     @property
     def stale(self) -> bool:
@@ -52,6 +53,7 @@ class BinanceFeed:
         while self._running:
             try:
                 async with websockets.connect(url, proxy=self.proxy) as ws:
+                    self._ws = ws
                     logger.info("Binance WS connected")
                     async for raw in ws:
                         msg = json.loads(raw)
@@ -68,3 +70,5 @@ class BinanceFeed:
 
     def stop(self):
         self._running = False
+        if getattr(self, "_ws", None):
+            asyncio.create_task(self._ws.close())
