@@ -32,6 +32,7 @@ class CoinbaseFeed:
         self.price: float = 0.0
         self.last_update: float = 0.0
         self._running = False
+        self._ws: websockets.WebSocketClientProtocol | None = None
 
     @property
     def stale(self) -> bool:
@@ -45,6 +46,7 @@ class CoinbaseFeed:
         while self._running:
             try:
                 async with websockets.connect(COINBASE_WS) as ws:
+                    self._ws = ws
                     sub = json.dumps({
                         "type": "subscribe",
                         "product_ids": [self.product],
@@ -69,3 +71,5 @@ class CoinbaseFeed:
 
     def stop(self):
         self._running = False
+        if getattr(self, "_ws", None):
+            asyncio.create_task(self._ws.close())
