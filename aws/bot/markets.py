@@ -11,7 +11,7 @@ import json
 import logging
 from dataclasses import dataclass
 
-import requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def parse_market(raw: dict) -> Market | None:
     )
 
 
-def get_market_by_slug(slug: str) -> Market | None:
+async def get_market_by_slug(slug: str) -> Market | None:
     """
     Fetch a single market by its exact slug.
 
@@ -108,25 +108,26 @@ def get_market_by_slug(slug: str) -> Market | None:
         Market or None if not found.
 
     Example:
-        >>> m = get_market_by_slug("btc-updown-5m-1777984200")
+        >>> m = await get_market_by_slug("btc-updown-5m-1777984200")
         >>> m.up_token_id
         '10530546384180107854...'
     """
     url = f"{GAMMA_HOST}/markets/slug/{slug}"
     try:
-        resp = requests.get(url, timeout=15)
-        if resp.status_code == 404:
-            logger.warning(f"Market not found: {slug}")
-            return None
-        resp.raise_for_status()
-    except requests.RequestException as e:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=15)
+            if resp.status_code == 404:
+                logger.warning(f"Market not found: {slug}")
+                return None
+            resp.raise_for_status()
+    except httpx.RequestError as e:
         logger.error(f"Gamma API request failed: {e}")
         return None
 
     return parse_market(resp.json())
 
 
-def get_markets(slugs: list[str]) -> dict[str, Market]:
+async def get_markets(slugs: list[str]) -> dict[str, Market]:
     """
     Batch-fetch multiple events by slug in a single request.
 
@@ -141,7 +142,7 @@ def get_markets(slugs: list[str]) -> dict[str, Market]:
         Missing slugs are omitted from the result.
 
     Example:
-        >>> markets = get_markets(["btc-updown-5m-1777984200", "eth-updown-5m-1777984200"])
+        >>> markets = await get_markets(["btc-updown-5m-1777984200", "eth-updown-5m-1777984200"])
         >>> len(markets)
         2
     """
@@ -149,9 +150,10 @@ def get_markets(slugs: list[str]) -> dict[str, Market]:
     params = [("slug", s) for s in slugs]
 
     try:
-        resp = requests.get(url, params=params, timeout=15)
-        resp.raise_for_status()
-    except requests.RequestException as e:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, params=params, timeout=15)
+            resp.raise_for_status()
+    except httpx.RequestError as e:
         logger.error(f"Gamma API request failed: {e}")
         return {}
 
@@ -175,7 +177,7 @@ def get_markets(slugs: list[str]) -> dict[str, Market]:
     return result
 
 
-def find_market_by_question(cfg, question: str) -> Market | None:
+async def find_market_by_question(cfg, question: str) -> Market | None:
     """
     Backward-compatible helper for older runner code.
 
@@ -184,7 +186,7 @@ def find_market_by_question(cfg, question: str) -> Market | None:
     from .market_state import get_event_slug
 
     slug = get_event_slug(getattr(cfg, "crypto", "btc"), getattr(cfg, "interval_minutes", 5))
-    market = get_market_by_slug(slug)
+    market = await get_market_by_slug(slug)
     if market and (question in market.question or market.question in question):
         return market
     return market

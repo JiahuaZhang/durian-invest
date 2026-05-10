@@ -26,8 +26,7 @@ async def _test_polymarket_order_book():
     logger.info(f"Generated slug: {slug}")
     logger.info("Fetching market data...")
     
-    # 2. get_market_by_slug is synchronous and hits the API, so we run it in a thread
-    market = await asyncio.to_thread(get_market_by_slug, slug)
+    market = await get_market_by_slug(slug)
     
     if not market:
         logger.error(f"Failed to fetch market for slug {slug}.")
