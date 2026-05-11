@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from ..config import BotConfig
 from ..markets import Market
@@ -54,15 +54,13 @@ class PolymarketState:
         market: Market,
         *,
         asset: str,
-        start_ts: int,
-        end_ts: int,
+        on_signal: Callable[["PolymarketState", TradeSignal], None] | None = None,
     ):
         self.cfg = cfg
         self.market = market
         self.asset = asset
         self.open_price: float | None = None
-        self.start_ts = start_ts
-        self.end_ts = end_ts
+        self.on_signal = on_signal
 
         self.orderbook = PolymarketOrderBook(asset_id=asset, side="Yes")
         self.binance_price: float = 0.0
@@ -87,14 +85,6 @@ class PolymarketState:
     def resolved(self) -> bool:
         return self.resolution is not None
 
-    def seconds_remaining(self, now_ts: int | None = None) -> int:
-        now = int(time.time()) if now_ts is None else now_ts
-        return max(0, self.end_ts - now)
-
-    def seconds_elapsed(self, now_ts: int | None = None) -> int:
-        now = int(time.time()) if now_ts is None else now_ts
-        return max(0, now - self.start_ts)
-
     def seed_prices(
         self,
         *,
@@ -116,12 +106,18 @@ class PolymarketState:
         self,
         source: PriceSource,
         price: float,
-        *,
-        now_ts: int | None = None,
     ) -> TradeSignal | None:
-        """Update one price source and immediately evaluate the entry signal."""
+        """Update one price source and immediately evaluate the entry signal.
+
+        If a signal is detected and ``on_signal`` is set, emit it to the
+        listener (e.g. the FeedManager) so it can stop the bridge task early
+        and proceed to order placement.
+        """
         self._set_price(source, price, time.monotonic())
-        return self.check_entry_signal(source=source, now_ts=now_ts)
+        signal = self.check_entry_signal(source=source)
+        if signal is not None and self.on_signal is not None:
+            self.on_signal(self, signal)
+        return signal
 
     def apply_market_message(self, message: dict[str, Any]) -> bool:
         """Apply a CLOB websocket orderbook message for this asset."""
@@ -160,7 +156,6 @@ class PolymarketState:
         self,
         *,
         source: PriceSource,
-        now_ts: int | None = None,
     ) -> TradeSignal | None:
         """Return the first aligned divergence + imbalance signal."""
         if self.resolved or self.trade or self.signal_snapshot:
@@ -169,11 +164,8 @@ class PolymarketState:
         if not self.prices_ready:
             return None
 
-        remaining = self.seconds_remaining(now_ts)
-
         signal = get_signal(
             source=source,
-            remaining_seconds=remaining,
             open_price=self.open_price,
             binance_price=self.binance_price,
             coinbase_price=self.coinbase_price,

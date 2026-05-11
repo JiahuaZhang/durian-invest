@@ -12,7 +12,7 @@ from ..feeds.coinbase import CoinbaseFeed
 from ..feeds.polymarket_crypto_price import PolymarketCryptoPrice
 from ..feeds.polymarket_market_channel import PolymarketMarketChannel
 from ..feeds.polymarket_state import PolymarketState
-from ..market_state import get_market_slug, get_window_range
+from ..market_state import get_market_slug
 from ..markets import get_market_by_slug
 from ..signals.divergence import PriceSource, TradeSignal
 
@@ -136,13 +136,10 @@ class FeedManager:
             logger.warning("Market not found yet: %s; will retry next tick", slug)
             return
 
-        start_ts, end_ts = get_window_range(self.cfg.crypto, self.cfg.interval_minutes)
         state = PolymarketState(
             cfg=self.cfg,
             market=market,
             asset=market.up_token_id,
-            start_ts=start_ts,
-            end_ts=end_ts,
             on_signal=self._on_signal_emitted,
         )
         self.states[market.up_token_id] = state
