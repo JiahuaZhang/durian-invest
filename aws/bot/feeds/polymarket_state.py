@@ -54,14 +54,13 @@ class PolymarketState:
         market: Market,
         *,
         asset: str,
-        open_price: float | None,
         start_ts: int,
         end_ts: int,
     ):
         self.cfg = cfg
         self.market = market
         self.asset = asset
-        self.open_price = open_price
+        self.open_price: float | None = None
         self.start_ts = start_ts
         self.end_ts = end_ts
 
@@ -133,6 +132,7 @@ class PolymarketState:
         elif event_type == "price_change":
             if not any(change.get("asset_id") == self.asset for change in message.get("price_changes", [])):
                 return False
+        # todo "market_resolved"
         else:
             return False
 
@@ -146,6 +146,7 @@ class PolymarketState:
         
         logger.info("\n" + "=" * 50)
         logger.info(f"Market Slug : {self.slug}")
+        logger.info(f"Bitcoin open price: ${self.open_price:.2f}")
         logger.info(f"Chainlink   : ${self.chainlink_price:.2f}")
         logger.info(f"Binance     : ${self.binance_price:.2f} (Gap: ${binance_gap:+.2f})")
         logger.info(f"Coinbase    : ${self.coinbase_price:.2f} (Gap: ${coinbase_gap:+.2f})")
