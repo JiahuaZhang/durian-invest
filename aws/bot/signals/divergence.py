@@ -62,7 +62,6 @@ class TradeSignal:
     """The exact market state and decision that caused an entry signal."""
     source: PriceSource
     side: str
-    remaining_seconds: int
     open_price: float | None
 
     binance_price: float
@@ -87,7 +86,6 @@ class TradeSignal:
 
 def get_signal(
     source: PriceSource,
-    remaining_seconds: int,
     open_price: float | None,
     binance_price: float,
     coinbase_price: float,
@@ -165,7 +163,6 @@ def get_signal(
     return TradeSignal(
         source=source,
         side=side,
-        remaining_seconds=remaining_seconds,
         open_price=open_price,
         binance_price=binance_price,
         coinbase_price=coinbase_price,

@@ -7,6 +7,7 @@ from bot.strategy.manager import FeedManager
 # Configure logging to see the outputs clearly when running the test
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("test_manager_ws")
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 def test_manager_ws_live():
     """

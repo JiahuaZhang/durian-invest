@@ -59,7 +59,7 @@ class PolymarketState:
         self.cfg = cfg
         self.market = market
         self.asset = asset
-        self.open_price: float | None = None
+        self.open_price: float = 0.0
         self.on_signal = on_signal
 
         self.orderbook = PolymarketOrderBook(asset_id=asset, side="Yes")
@@ -143,7 +143,7 @@ class PolymarketState:
         logger.info("\n" + "=" * 50)
         logger.info(f"Market Slug : {self.slug}")
         logger.info(f"Bitcoin open price: ${self.open_price:.2f}")
-        logger.info(f"Chainlink   : ${self.chainlink_price:.2f}")
+        logger.info(f"Chainlink   : ${self.chainlink_price:.2f} (delta: ${self.chainlink_price - self.open_price:+.2f})")
         logger.info(f"Binance     : ${self.binance_price:.2f} (Gap: ${binance_gap:+.2f})")
         logger.info(f"Coinbase    : ${self.coinbase_price:.2f} (Gap: ${coinbase_gap:+.2f})")
         logger.info("=" * 50)
