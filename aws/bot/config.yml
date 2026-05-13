@@ -13,6 +13,12 @@ enabled: true
 polymarket:
   private-key: ${POLYMARKET_PRIVATE_KEY}
   address: ${POLYMARKET_ADDRESS}
+  # 0 = EOA               (rejected on CLOB V2 for wallets that never traded on V1).
+  # 1 = POLY_PROXY        (legacy email-signup proxy wallet).
+  # 2 = POLY_GNOSIS_SAFE  (legacy Gnosis Safe wallet).
+  # 3 = POLY_1271         (REQUIRED for new API users — funder is the deposit wallet,
+  #                        EOA signs, deposit-wallet validates via ERC-1271).
+  signature-type: 3
 
 proxy:
   # false = never proxy, true = always proxy on local, auto = use proxy on local when port is open

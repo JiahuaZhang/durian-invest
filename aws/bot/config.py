@@ -65,6 +65,9 @@ class BotConfig:
     # which typically reference ${POLYMARKET_PRIVATE_KEY} / ${POLYMARKET_ADDRESS}.
     private_key: str = field(default="", repr=False)
     address: str = ""
+    # 0=EOA, 1=POLY_PROXY (older email-signup), 2=POLY_GNOSIS_SAFE (newer),
+    # 3=POLY_1271 (arbitrary smart-contract wallet).
+    signature_type: int = 0
 
     # Polymarket L2 API credentials (from .env, only required for live trading)
     clob_api_key: str = field(default="", repr=False)
@@ -239,6 +242,7 @@ def load_config(*, validate: bool = True) -> BotConfig:
         # Wallet — values come from config.yml after ${...} substitution
         private_key=poly.get("private-key", ""),
         address=poly.get("address", ""),
+        signature_type=int(poly.get("signature-type", BotConfig.signature_type)),
         # CLOB API creds — env-only (not in config.yml)
         clob_api_key=os.getenv("CLOB_API_KEY", ""),
         clob_secret=os.getenv("CLOB_SECRET", ""),
