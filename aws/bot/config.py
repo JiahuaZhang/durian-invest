@@ -69,7 +69,7 @@ class PredictConfig:
     """
     is_test: bool = True
     ws_host: str = "wss://ws.predict.fun/ws"
-    api_key: str = PREDICT_API_HOST_MAINNET
+    api_key: str = ""
 
     @property
     def api_host(self) -> str:
@@ -282,6 +282,7 @@ def load_config(*, validate: bool = True) -> BotConfig:
         ),
         predict=PredictConfig(
             is_test=_parse_boolish(predict_raw.get("is-test", True), default=True),
+            api_key=predict_raw.get("api-key", ""),
         ),
         signals=SignalConfig(
             divergence_threshold=float(signals_raw.get("divergence-threshold", SignalConfig.divergence_threshold)),
