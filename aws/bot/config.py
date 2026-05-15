@@ -56,6 +56,26 @@ class FeedConfig:
     chainlink_poll_seconds: int = 1
 
 
+PREDICT_API_HOST_MAINNET = "https://api.predict.fun"
+PREDICT_API_HOST_TESTNET = "https://api-testnet.predict.fun"
+
+
+@dataclass
+class PredictConfig:
+    """Predict.fun REST + WebSocket endpoints.
+
+    Testnet (default): no API key required, no real cash at risk.
+    Mainnet: set ``is-test: False`` and supply ``PREDICT_API_KEY``.
+    """
+    is_test: bool = True
+    ws_host: str = "wss://ws.predict.fun/ws"
+    api_key: str = PREDICT_API_HOST_MAINNET
+
+    @property
+    def api_host(self) -> str:
+        return PREDICT_API_HOST_TESTNET if self.is_test else PREDICT_API_HOST_MAINNET
+
+
 @dataclass
 class BotConfig:
     name: str = "polymarket-btc-5m"
@@ -82,6 +102,7 @@ class BotConfig:
     interval_minutes: int = 5
 
     feeds: FeedConfig = field(default_factory=FeedConfig)
+    predict: PredictConfig = field(default_factory=PredictConfig)
     signals: SignalConfig = field(default_factory=SignalConfig)
     exit: ExitConfig = field(default_factory=ExitConfig)
 
@@ -233,6 +254,7 @@ def load_config(*, validate: bool = True) -> BotConfig:
     proxy = c.get("proxy", {})
     contract = c.get("contract", {})
     feeds_raw = c.get("feeds", {})
+    predict_raw = c.get("predict", {})
     signals_raw = c.get("signals", {})
     exit_raw = c.get("exit", {})
 
@@ -257,6 +279,9 @@ def load_config(*, validate: bool = True) -> BotConfig:
             coinbase_product=feeds_raw.get("coinbase-product", FeedConfig.coinbase_product),
             chainlink_feed_id=feeds_raw.get("chainlink-feed-id", FeedConfig.chainlink_feed_id),
             chainlink_poll_seconds=int(feeds_raw.get("chainlink-poll-seconds", FeedConfig.chainlink_poll_seconds)),
+        ),
+        predict=PredictConfig(
+            is_test=_parse_boolish(predict_raw.get("is-test", True), default=True),
         ),
         signals=SignalConfig(
             divergence_threshold=float(signals_raw.get("divergence-threshold", SignalConfig.divergence_threshold)),

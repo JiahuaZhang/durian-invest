@@ -36,6 +36,10 @@ feeds:
   chainlink-feed-id: "0x00039d9e45394f473ab1f050a1b963e6b05351e52d71e507509ada0c95ed75b8"
   chainlink-poll-seconds: 1
 
+predict:
+  is-test: True
+  api-key: ${PREDICT_API_KEY:-}
+
 signals:
   divergence-threshold: 50     # USD gap required
   imbalance-bullish: 1.8       # ratio above this = bullish
