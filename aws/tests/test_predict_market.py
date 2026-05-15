@@ -23,4 +23,7 @@ async def _test_predict_market():
     market = await client.get_current_5m_crypto_market("btc")
     logger.info("market payload:\n%s", json.dumps(market, indent=2, default=str))
 
+    start_price = await PredictMarketClient.get_start_price("btc")
+    logger.info("start price: %s", start_price)
+
 # $env:PYTHONPATH="."; uv run pytest tests/test_predict_market.py -s -v --log-cli-level=INFO

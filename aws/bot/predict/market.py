@@ -95,3 +95,83 @@ class PredictMarketClient:
 
         logger.warning("No predict.fun market found for categorySlug=%s (%d markets scanned)", slug, len(markets))
         return None
+
+    @staticmethod
+    async def get_start_price(crypto: str = "btc", offset: int = 0) -> float | None:
+            """Fetch the start price of a 5-min crypto up/down market via GraphQL.
+
+            Calls POST https://graphql.predict.fun/graphql to fetch the startPrice 
+            using the dynamically generated categoryId (slug).
+
+            Args:
+                crypto: ticker — btc, eth, sol, etc.
+                offset: 0 = current window, -1 = previous, +1 = next.
+
+            Returns:
+                The start price as a float, or None if not found/error.
+            """
+            slug = PredictMarketClient.get_category_slug(crypto, 5, offset)
+            url = "https://graphql.predict.fun/graphql"
+            
+            payload = {
+                "query": (
+                    "query GetCategoryStartPrice($categoryId: ID!) {\n"
+                    "  category(id: $categoryId) {\n"
+                    "    __typename\n"
+                    "    ... on CryptoUpDownCategory {\n"
+                    "      marketData {\n"
+                    "        startPrice\n"
+                    "      }\n"
+                    "    }\n"
+                    "  }\n"
+                    "}"
+                ),
+                "variables": {
+                    "categoryId": slug
+                },
+                "operationName": "GetCategoryStartPrice"
+            }
+            
+            headers = {
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            }
+
+            logger.debug("Fetching predict.fun startPrice for categoryId=%s via GraphQL", slug)
+
+            try:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(url, json=payload, headers=headers, timeout=15)
+                    resp.raise_for_status()
+            except httpx.RequestError as e:
+                logger.error("Predict.fun GraphQL request failed: %s", e)
+                return None
+            except httpx.HTTPStatusError as e:
+                logger.error("Predict.fun GraphQL returned %s: %s", e.response.status_code, e.response.text[:200])
+                return None
+
+            body = resp.json()
+            
+            # Safely parse the deeply nested response
+            try:
+                category = body.get("data", {}).get("category")
+                if not category:
+                    logger.warning("No category found in GraphQL response for categoryId=%s", slug)
+                    return None
+                    
+                market_data = category.get("marketData", [])
+                if not market_data:
+                    logger.warning("No marketData found in GraphQL response for categoryId=%s", slug)
+                    return None
+                    
+                start_price = market_data[0].get("startPrice")
+                if start_price is not None:
+                    logger.info("Found start price for %s: %s", slug, start_price)
+                    return float(start_price)
+                else:
+                    logger.warning("startPrice is missing in marketData for categoryId=%s", slug)
+                    return None
+                    
+            except Exception as e:
+                logger.error("Failed to parse predict.fun GraphQL response: %s", e)
+                return None
