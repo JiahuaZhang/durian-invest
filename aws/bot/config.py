@@ -75,6 +75,10 @@ class PredictConfig:
     def api_host(self) -> str:
         return PREDICT_API_HOST_TESTNET if self.is_test else PREDICT_API_HOST_MAINNET
 
+    @property
+    def credentials(self) -> str:
+        return "" if self.is_test else self.api_key
+
 
 @dataclass
 class BotConfig:

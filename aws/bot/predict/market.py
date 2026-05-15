@@ -56,7 +56,8 @@ class PredictMarketClient:
         """Fetch the current 5-min crypto up/down market from predict.fun.
 
         Calls ``GET /v1/markets?status=OPEN&marketVariant=CRYPTO_UP_DOWN``
-        and filters results by the deterministic ``categorySlug``.
+        and paginates through all pages to find the market matching
+        the deterministic ``categorySlug``.
 
         Args:
             crypto: ticker — btc, eth, sol, etc.
@@ -67,17 +68,40 @@ class PredictMarketClient:
         """
         slug = self.get_category_slug(crypto, 5, offset)
         url = f"{self._predict.api_host}/v1/markets"
-        params = {"status": "OPEN", "marketVariant": "CRYPTO_UP_DOWN"}
+        params: dict[str, str | int] = {
+            "status": "OPEN",
+            "marketVariant": "CRYPTO_UP_DOWN",
+            "first": 100,
+            "sort": "VOLUME_TOTAL_DESC"
+        }
         headers: dict[str, str] = {}
-        if self._predict.api_key:
-            headers["x-api-key"] = self._predict.api_key
+        headers["x-api-key"] = self._predict.credentials
 
         logger.debug("Searching predict.fun for categorySlug=%s at %s", slug, url)
 
+        total_scanned = 0
+        max_pages = 10
+
         try:
             async with httpx.AsyncClient() as client:
-                resp = await client.get(url, params=params, headers=headers, timeout=15)
-                resp.raise_for_status()
+                for page in range(max_pages):
+                    resp = await client.get(url, params=params, headers=headers, timeout=15)
+                    resp.raise_for_status()
+
+                    body = resp.json()
+                    markets: list[dict] = body.get("data", [])
+                    total_scanned += len(markets)
+
+                    for market in markets:
+                        if market.get("categorySlug") == slug:
+                            logger.info("Found predict.fun market: id=%s title=%r (page %d)", market.get("id"), market.get("title"), page + 1)
+                            return market
+
+                    cursor = body.get("cursor")
+                    if not cursor or not markets:
+                        break
+                    params["after"] = cursor
+
         except httpx.RequestError as e:
             logger.error("Predict.fun API request failed: %s", e)
             return None
@@ -85,15 +109,7 @@ class PredictMarketClient:
             logger.error("Predict.fun API returned %s: %s", e.response.status_code, e.response.text[:200])
             return None
 
-        body = resp.json()
-        markets: list[dict] = body.get("data", [])
-
-        for market in markets:
-            if market.get("categorySlug") == slug:
-                logger.info("Found predict.fun market: id=%s title=%r", market.get("id"), market.get("title"))
-                return market
-
-        logger.warning("No predict.fun market found for categorySlug=%s (%d markets scanned)", slug, len(markets))
+        logger.warning("No predict.fun market found for categorySlug=%s (%d markets scanned)", slug, total_scanned)
         return None
 
     @staticmethod
