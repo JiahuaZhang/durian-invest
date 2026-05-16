@@ -68,7 +68,6 @@ class PredictConfig:
     Mainnet: set ``is-test: False`` and supply ``PREDICT_API_KEY``.
     """
     is_test: bool = True
-    ws_host: str = "wss://ws.predict.fun/ws"
     api_key: str = ""
 
     @property
