@@ -69,6 +69,7 @@ class PredictConfig:
     """
     is_test: bool = True
     api_key: str = ""
+    private_key: str = field(default="", repr=False)
 
     @property
     def api_host(self) -> str:
@@ -286,6 +287,7 @@ def load_config(*, validate: bool = True) -> BotConfig:
         predict=PredictConfig(
             is_test=_parse_boolish(predict_raw.get("is-test", True), default=True),
             api_key=predict_raw.get("api-key", ""),
+            private_key=predict_raw.get("private-key", ""),
         ),
         signals=SignalConfig(
             divergence_threshold=float(signals_raw.get("divergence-threshold", SignalConfig.divergence_threshold)),

@@ -10,21 +10,39 @@ API reference: https://dev.predict.fun/get-markets-25326905e0
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
 import time
+from typing import Any
 
 import httpx
 
-from ..config import PredictConfig
+from eth_account import Account
+from eth_account.messages import encode_defunct
+
+from ..config import BotConfig, PredictConfig
 
 logger = logging.getLogger(__name__)
 
 
-class PredictMarketClient:
-    """Client for predict.fun market lookups."""
+class PredictClient:
+    """Client for predict.fun market lookups and authenticated trading."""
 
-    def __init__(self, predict: PredictConfig) -> None:
-        self._predict = predict
+    def __init__(self, cfg: BotConfig) -> None:
+        self._cfg = cfg
+        self._predict = cfg.predict
+        self._jwt: str | None = None
+        self._jwt_expires_at: float = 0
+        
+        # Determine the wallet address if private key is provided
+        self._account = None
+        private_key = cfg.predict.private_key
+        if private_key:
+            try:
+                self._account = Account.from_key(private_key)
+            except Exception as e:
+                logger.error("Failed to parse predict private key: %s", e)
 
     @staticmethod
     def get_category_slug(crypto: str = "btc", interval_minutes: int = 5, offset: int = 0) -> str:
@@ -75,7 +93,8 @@ class PredictMarketClient:
             "sort": "VOLUME_TOTAL_DESC"
         }
         headers: dict[str, str] = {}
-        headers["x-api-key"] = self._predict.credentials
+        if self._predict.credentials:
+            headers["x-api-key"] = self._predict.credentials
 
         logger.debug("Searching predict.fun for categorySlug=%s at %s", slug, url)
 
@@ -118,7 +137,9 @@ class PredictMarketClient:
         Calls ``GET /v1/markets/{market_id}``
         """
         url = f"{self._predict.api_host}/v1/markets/{market_id}"
-        headers: dict[str, str] = {"x-api-key": self._predict.credentials}
+        headers: dict[str, str] = {}
+        if self._predict.credentials:
+            headers["x-api-key"] = self._predict.credentials
         
         logger.debug("Fetching predict.fun market id=%s at %s", market_id, url)
         
@@ -136,6 +157,122 @@ class PredictMarketClient:
             
         return None
 
+    async def get_jwt(self, force_refresh: bool = False) -> str | None:
+        """Get a JWT token for authenticated requests, cached in-memory.
+        Tokens are valid for 24 hours; we refresh if less than 5 minutes remain.
+        """
+        if self._jwt and not force_refresh and time.time() < self._jwt_expires_at:
+            return self._jwt
+        
+        if not self._account:
+            logger.error("Cannot get predict.fun JWT without a private key.")
+            return None
+            
+        try:
+            async with httpx.AsyncClient() as client:
+                # 1. Get Auth Message
+                msg_url = f"{self._predict.api_host}/v1/auth/message"
+                headers = {}
+                if self._predict.credentials:
+                    headers["x-api-key"] = self._predict.credentials
+                resp_msg = await client.get(msg_url, headers=headers, timeout=10)
+                resp_msg.raise_for_status()
+                auth_message = resp_msg.json().get("data", {}).get("message")
+                
+                if not auth_message:
+                    logger.error("No auth message returned from predict.fun")
+                    return None
+                    
+                # 2. Sign Message
+                msg = encode_defunct(text=auth_message)
+                signed = self._account.sign_message(msg)
+                signature = "0x" + signed.signature.hex()
+                
+                # 3. Get JWT
+                auth_url = f"{self._predict.api_host}/v1/auth"
+                payload = {
+                    "signer": self._account.address,
+                    "signature": signature,
+                    "message": auth_message
+                }
+                resp_auth = await client.post(auth_url, headers=headers, json=payload, timeout=10)
+                resp_auth.raise_for_status()
+                
+                token = resp_auth.json().get("data", {}).get("token")
+                if token:
+                    self._jwt = token
+                    try:
+                        # Decode the JWT payload to find 'exp'
+                        payload_b64 = token.split('.')[1]
+                        payload_b64 += '=' * (-len(payload_b64) % 4)
+                        payload = json.loads(base64.urlsafe_b64decode(payload_b64).decode())
+                        self._jwt_expires_at = float(payload.get("exp", time.time() + 86400))
+                    except Exception as e:
+                        logger.warning("Failed to decode JWT to find expiration, defaulting to 24h: %s", e)
+                        self._jwt_expires_at = time.time() + 86400
+                        
+                    logger.info("Successfully authenticated with predict.fun")
+                    return token
+                else:
+                    logger.error("No token in predict.fun auth response")
+                    return None
+        except Exception as e:
+            logger.error("Failed to authenticate with predict.fun: %s", e)
+            return None
+
+    async def create_order(self, order_payload: dict[str, Any]) -> dict | None:
+        """Create an order on predict.fun."""
+        jwt = await self.get_jwt()
+        if not jwt:
+            return None
+            
+        url = f"{self._predict.api_host}/v1/orders"
+        headers = {
+            "Authorization": f"Bearer {jwt}",
+            "Content-Type": "application/json"
+        }
+        if self._predict.credentials:
+            headers["x-api-key"] = self._predict.credentials
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                # The endpoint expects {"data": {...}} payload
+                resp = await client.post(url, headers=headers, json={"data": order_payload}, timeout=15)
+                resp.raise_for_status()
+                return resp.json().get("data")
+        except httpx.HTTPStatusError as e:
+            logger.error("Predict.fun create order failed: %s %s", e.response.status_code, e.response.text[:200])
+        except Exception as e:
+            logger.error("Predict.fun create order error: %s", e)
+            
+        return None
+
+    async def cancel_orders(self, ids: list[str]) -> dict | None:
+        """Remove orders from the orderbook."""
+        jwt = await self.get_jwt()
+        if not jwt:
+            return None
+            
+        url = f"{self._predict.api_host}/v1/orders/remove"
+        headers = {
+            "Authorization": f"Bearer {jwt}",
+            "Content-Type": "application/json"
+        }
+        if self._predict.credentials:
+            headers["x-api-key"] = self._predict.credentials
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, headers=headers, json={"data": {"ids": ids}}, timeout=15)
+                resp.raise_for_status()
+                return resp.json()
+        except httpx.HTTPStatusError as e:
+            logger.error("Predict.fun cancel orders failed: %s %s", e.response.status_code, e.response.text[:200])
+        except Exception as e:
+            logger.error("Predict.fun cancel orders error: %s", e)
+            
+        return None
+
     @staticmethod
     async def get_start_price(crypto: str = "btc", offset: int = 0) -> float | None:
             """Fetch the start price of a 5-min crypto up/down market via GraphQL.
@@ -150,7 +287,7 @@ class PredictMarketClient:
             Returns:
                 The start price as a float, or None if not found/error.
             """
-            slug = PredictMarketClient.get_category_slug(crypto, 5, offset)
+            slug = PredictClient.get_category_slug(crypto, 5, offset)
             url = "https://graphql.predict.fun/graphql"
             
             payload = {

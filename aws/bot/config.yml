@@ -38,7 +38,9 @@ feeds:
 
 predict:
   is-test: True
+  # is-test: False
   api-key: ${PREDICT_API_KEY:-}
+  private-key: ${PREDICT_PRIVATE_KEY}
 
 signals:
   divergence-threshold: 50     # USD gap required

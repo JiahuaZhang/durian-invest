@@ -4,7 +4,7 @@ import json
 import logging
 
 from bot.config import load_config
-from bot.predict.market import PredictMarketClient
+from bot.predict.client import PredictClient
 from bot.predict.market_channel import PredictMarketChannel
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -17,7 +17,7 @@ def test_predict_market_channel():
 
 async def _test_predict_market_channel():
     config = load_config(validate=False)
-    client = PredictMarketClient(config.predict)
+    client = PredictClient(config)
 
     market = await client.get_current_5m_crypto_market("btc")
     if market is None:
