@@ -112,6 +112,30 @@ class PredictMarketClient:
         logger.warning("No predict.fun market found for categorySlug=%s (%d markets scanned)", slug, total_scanned)
         return None
 
+    async def get_market(self, market_id: str | int) -> dict | None:
+        """Fetch a specific market by ID.
+
+        Calls ``GET /v1/markets/{market_id}``
+        """
+        url = f"{self._predict.api_host}/v1/markets/{market_id}"
+        headers: dict[str, str] = {"x-api-key": self._predict.credentials}
+        
+        logger.debug("Fetching predict.fun market id=%s at %s", market_id, url)
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers, timeout=15)
+                resp.raise_for_status()
+                
+                body = resp.json()
+                return body.get("data")
+        except httpx.RequestError as e:
+            logger.error("Predict.fun API request failed: %s", e)
+        except httpx.HTTPStatusError as e:
+            logger.error("Predict.fun API returned %s: %s", e.response.status_code, e.response.text[:200])
+            
+        return None
+
     @staticmethod
     async def get_start_price(crypto: str = "btc", offset: int = 0) -> float | None:
             """Fetch the start price of a 5-min crypto up/down market via GraphQL.
