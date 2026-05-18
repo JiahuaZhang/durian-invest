@@ -112,17 +112,8 @@ class BotConfig:
 
     order_size: float = 1.0
 
-    # Mode flags — env-drivens
-    live_trading: bool = False
-
-    @property
-    def deploy_env(self) -> str:
-        return os.getenv("DEPLOY_ENV", "local").lower()
-
     @property
     def use_proxy(self) -> bool:
-        if self.deploy_env != "local":
-            return False
         if isinstance(self.proxy_enabled, bool):
             return self.proxy_enabled
         if self.proxy_enabled == "auto":
@@ -151,10 +142,6 @@ class BotConfig:
     def has_api_creds(self) -> bool:
         return bool(self.clob_api_key and self.clob_secret and self.clob_pass_phrase)
 
-    @property
-    def can_submit_orders(self) -> bool:
-        return self.live_trading
-
     def validate(
         self,
         *,
@@ -167,11 +154,9 @@ class BotConfig:
             raise ConfigError(f"proxy.enabled must be true, false, or auto, got {self.proxy_enabled!r}")
         if not (1 <= self.proxy_port <= 65535):
             raise ConfigError(f"proxy port must be 1-65535, got {self.proxy_port}")
-        if self.live_trading and self.use_proxy:
-            raise ConfigError("live trading through proxy is disabled")
         if require_private_key and not self.has_private_key:
             raise ConfigError("private-key is required (set POLYMARKET_PRIVATE_KEY in .env)")
-        if self.live_trading or require_live_credentials:
+        if require_live_credentials:
             missing: list[str] = []
             if not self.has_private_key:
                 missing.append("POLYMARKET_PRIVATE_KEY")
@@ -299,7 +284,6 @@ def load_config(*, validate: bool = True) -> BotConfig:
             take_profit=float(exit_raw.get("take-profit", ExitConfig.take_profit)),
             stop_loss=float(exit_raw.get("stop-loss", ExitConfig.stop_loss)),
         ),
-        live_trading=_parse_boolish(os.getenv("LIVE_TRADING", "false"), default=False),
     )
     if validate:
         cfg.validate()
