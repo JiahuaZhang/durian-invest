@@ -7,6 +7,7 @@ const links = [
   { link: 'https://optioncharts.io/', name: 'Option Charts' },
   { link: 'https://www.google.com/finance', name: 'Google Finance' },
   { link: 'https://wall-street-skill.com', name: 'Wall Street Skills' },
+  { link: 'https://us-treasury-bonds-monitor-luffa.vercel.app', name: '美债因子看板' },
 ];
 
 function App() {

@@ -32,7 +32,7 @@ def _select_expensive_outcome(market: dict) -> tuple[dict, Decimal | None]:
     if not outcomes:
         raise ValueError("Market has no outcomes")
 
-    selected = outcomes[0]
+    selected: dict = {}
     selected_quote: Decimal | None = None
     for outcome in outcomes:
         best_ask = outcome.get("bestAsk")
@@ -97,9 +97,6 @@ async def _test_predict_smart_minimum_order():
 
     market = await client.get_current_5m_crypto_market("btc")
     logger.info("market payload:\n%s", _pretty_json(market))
-    if not market or not market.get("outcomes"):
-        logger.warning("No tradable BTC market found for smart_minimum_order diagnostic.")
-        return
 
     outcome, quote = _select_expensive_outcome(market)
     outcome_name = outcome.get("name", "Up")
