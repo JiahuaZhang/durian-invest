@@ -4,6 +4,5 @@
         "tests"
     ],
     "python.testing.unittestEnabled": false,
-    "python.testing.pytestEnabled": true,
-    "python.defaultInterpreterPath": "aws/.venv/Scripts/python.exe"
+    "python.testing.pytestEnabled": true
 }

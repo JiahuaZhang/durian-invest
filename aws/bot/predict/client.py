@@ -13,17 +13,104 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import secrets
 import time
+from decimal import ROUND_CEILING, Decimal
 from typing import Any
 
 import httpx
 
 from eth_account import Account
-from eth_account.messages import encode_defunct
+from eth_account.messages import encode_defunct, encode_typed_data
 
 from ..config import BotConfig, PredictConfig
 
 logger = logging.getLogger(__name__)
+
+PREDICT_PROTOCOL_NAME = "predict.fun CTF Exchange"
+PREDICT_PROTOCOL_VERSION = "1"
+PREDICT_PRECISION = 10**18
+PREDICT_MAX_SALT = 2_147_483_648
+PREDICT_ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+PREDICT_LIMIT_ORDER_EXPIRATION = 4102444800  # 2100-01-01T00:00:00Z
+PREDICT_MIN_ORDER_VALUE = Decimal("0.90")
+
+PREDICT_CHAIN_ID_MAINNET = 56
+PREDICT_CHAIN_ID_TESTNET = 97
+
+# Mirrors @predictdotfun/sdk v1.3.x AddressesByChainId. The EIP-712
+# verifying contract changes with both network and market type.
+PREDICT_EXCHANGE_BY_CHAIN_ID: dict[int, dict[tuple[bool, bool], str]] = {
+    PREDICT_CHAIN_ID_MAINNET: {
+        (False, False): "0x8BC070BEdAB741406F4B1Eb65A72bee27894B689",
+        (True, False): "0x365fb81bd4A24D6303cd2F19c349dE6894D8d58A",
+        (False, True): "0x6bEb5a40C032AFc305961162d8204CDA16DECFa5",
+        (True, True): "0x8A289d458f5a134bA40015085A8F50Ffb681B41d",
+    },
+    PREDICT_CHAIN_ID_TESTNET: {
+        (False, False): "0x2A6413639BD3d73a20ed8C95F634Ce198ABbd2d7",
+        (True, False): "0xd690b2bd441bE36431F6F6639D7Ad351e7B29680",
+        (False, True): "0x8a6B4Fa700A1e310b106E7a48bAFa29111f66e89",
+        (True, True): "0x95D5113bc50eD201e319101bbca3e0E250662fCC",
+    },
+}
+
+PREDICT_ORDER_TYPES = {
+    "EIP712Domain": [
+        {"name": "name", "type": "string"},
+        {"name": "version", "type": "string"},
+        {"name": "chainId", "type": "uint256"},
+        {"name": "verifyingContract", "type": "address"},
+    ],
+    "Order": [
+        {"name": "salt", "type": "uint256"},
+        {"name": "maker", "type": "address"},
+        {"name": "signer", "type": "address"},
+        {"name": "taker", "type": "address"},
+        {"name": "tokenId", "type": "uint256"},
+        {"name": "makerAmount", "type": "uint256"},
+        {"name": "takerAmount", "type": "uint256"},
+        {"name": "expiration", "type": "uint256"},
+        {"name": "nonce", "type": "uint256"},
+        {"name": "feeRateBps", "type": "uint256"},
+        {"name": "side", "type": "uint8"},
+        {"name": "signatureType", "type": "uint8"},
+    ],
+}
+
+
+def _to_wei(value: float | int | str | Decimal) -> int:
+    return int(Decimal(str(value)) * Decimal(PREDICT_PRECISION))
+
+
+def _retain_significant_digits(num: int, significant_digits: int) -> int:
+    if num == 0:
+        return 0
+
+    sign = -1 if num < 0 else 1
+    abs_num = abs(num)
+    excess = len(str(abs_num)) - significant_digits
+    if excess <= 0:
+        return num
+
+    divisor = 10**excess
+    return sign * ((abs_num // divisor) * divisor)
+
+
+def get_minimum_order_size(
+    price: float | int | str | Decimal,
+    min_order_value: float | int | str | Decimal = PREDICT_MIN_ORDER_VALUE,
+) -> Decimal:
+    price_wei = _retain_significant_digits(_to_wei(price), 3)
+    effective_price = Decimal(price_wei) / Decimal(PREDICT_PRECISION)
+    if effective_price <= 0:
+        raise ValueError(f"Predict.fun order price must be positive, got {price!r}")
+
+    min_value = Decimal(str(min_order_value))
+    if min_value <= 0:
+        raise ValueError(f"Predict.fun minimum order value must be positive, got {min_order_value!r}")
+
+    return (min_value / effective_price).to_integral_value(rounding=ROUND_CEILING)
 
 
 class PredictClient:
@@ -43,6 +130,18 @@ class PredictClient:
                 self._account = Account.from_key(private_key)
             except Exception as e:
                 logger.error("Failed to parse predict private key: %s", e)
+
+    def _http_client(self) -> httpx.AsyncClient:
+        """Build an HTTP client, opting into proxy only for restricted endpoints."""
+        return httpx.AsyncClient(proxy=self._cfg.httpx_proxy if self._cfg.use_proxy else None)
+
+    @staticmethod
+    def minimum_order_size(
+        price: float | int | str | Decimal,
+        min_order_value: float | int | str | Decimal = PREDICT_MIN_ORDER_VALUE,
+    ) -> Decimal:
+        """Return the smallest whole-share order size that passes Predict's minimum."""
+        return get_minimum_order_size(price, min_order_value)
 
     @staticmethod
     def get_category_slug(crypto: str = "btc", interval_minutes: int = 5, offset: int = 0) -> str:
@@ -90,7 +189,7 @@ class PredictClient:
             "status": "OPEN",
             "marketVariant": "CRYPTO_UP_DOWN",
             "first": 100,
-            "sort": "VOLUME_TOTAL_DESC"
+            "sort": "VOLUME_24H_CHANGE_DESC"
         }
         headers: dict[str, str] = {}
         if self._predict.credentials:
@@ -220,7 +319,12 @@ class PredictClient:
             logger.error("Failed to authenticate with predict.fun: %s", e)
             return None
 
-    async def create_order(self, order_payload: dict[str, Any]) -> dict | None:
+    async def create_order(
+        self,
+        order_payload: dict[str, Any],
+        *,
+        return_full_response: bool = False,
+    ) -> dict | None:
         """Create an order on predict.fun."""
         jwt = await self.get_jwt()
         if not jwt:
@@ -235,17 +339,168 @@ class PredictClient:
             headers["x-api-key"] = self._predict.credentials
         
         try:
-            async with httpx.AsyncClient() as client:
+            async with self._http_client() as client:
                 # The endpoint expects {"data": {...}} payload
                 resp = await client.post(url, headers=headers, json={"data": order_payload}, timeout=15)
                 resp.raise_for_status()
-                return resp.json().get("data")
+                body = resp.json()
+                return body if return_full_response else body.get("data")
         except httpx.HTTPStatusError as e:
-            logger.error("Predict.fun create order failed: %s %s", e.response.status_code, e.response.text[:200])
+            logger.error("Predict.fun create order failed: %s %s", e.response.status_code, e.response.text)
+            raise e
         except Exception as e:
             logger.error("Predict.fun create order error: %s", e)
-            
-        return None
+            raise e
+
+    @staticmethod
+    def _find_outcome(market: dict[str, Any], outcome_name: str) -> dict[str, Any]:
+        """Find an outcome by name (e.g. 'Up', 'Down') in a market dict."""
+        for outcome in market.get("outcomes", []):
+            if outcome.get("name", "").lower() == outcome_name.lower():
+                return outcome
+        available = [o.get("name") for o in market.get("outcomes", [])]
+        raise ValueError(f"Outcome {outcome_name!r} not found in market {market.get('id')}. Available: {available}")
+
+    async def place_limit_order(
+        self,
+        market: dict[str, Any],
+        outcome_name: str,
+        side: str,
+        price: float | int | str | Decimal,
+        size: float | int | str | Decimal,
+        is_post_only: bool = False,
+        return_full_response: bool = False,
+    ) -> dict | None:
+        """Place a limit order by building and signing the required EIP-712 payload.
+
+        All market metadata (feeRateBps, isNegRisk, isYieldBearing, tokenId)
+        is derived from the *market* dict, so callers don't need to pass them.
+        """
+        if not self._account:
+            logger.error("Cannot place order: No private key configured.")
+            return None
+
+        outcome = self._find_outcome(market, outcome_name)
+        token_id = outcome["onChainId"]
+        fee_rate_bps = int(market.get("feeRateBps", 200))
+        is_neg_risk = bool(market.get("isNegRisk", False))
+        is_yield_bearing = bool(market.get("isYieldBearing", False))
+
+        chain_id = PREDICT_CHAIN_ID_TESTNET if self._predict.is_test else PREDICT_CHAIN_ID_MAINNET
+        exchange_contract = PREDICT_EXCHANGE_BY_CHAIN_ID[chain_id][(is_neg_risk, is_yield_bearing)]
+
+        # Match the Predict SDK's LIMIT amount helper: 18-decimal inputs,
+        # price truncated to 3 significant digits, quantity to 5.
+        price_wei = _retain_significant_digits(_to_wei(price), 3)
+        qty_wei = _retain_significant_digits(_to_wei(size), 5)
+        if qty_wei < 10**16:
+            raise ValueError("Predict.fun limit order size must be at least 0.01 shares.")
+        
+        if side.upper() == "BUY":
+            maker_amount = (price_wei * qty_wei) // PREDICT_PRECISION
+            taker_amount = qty_wei
+            order_side = 0
+        elif side.upper() == "SELL":
+            maker_amount = qty_wei
+            taker_amount = (price_wei * qty_wei) // PREDICT_PRECISION
+            order_side = 1
+        else:
+            raise ValueError(f"Invalid side {side}")
+
+        salt = secrets.randbelow(PREDICT_MAX_SALT + 1)
+
+        domain = {
+            "name": PREDICT_PROTOCOL_NAME,
+            "version": PREDICT_PROTOCOL_VERSION,
+            "chainId": chain_id,
+            "verifyingContract": exchange_contract
+        }
+
+        message = {
+            "salt": salt,
+            "maker": self._account.address,
+            "signer": self._account.address,
+            "taker": PREDICT_ZERO_ADDRESS,
+            "tokenId": int(token_id),
+            "makerAmount": maker_amount,
+            "takerAmount": taker_amount,
+            "expiration": PREDICT_LIMIT_ORDER_EXPIRATION,
+            "nonce": 0,
+            "feeRateBps": fee_rate_bps,
+            "side": order_side,
+            "signatureType": 0
+        }
+
+        encoded = encode_typed_data(
+            full_message={
+                "domain": domain,
+                "types": PREDICT_ORDER_TYPES,
+                "primaryType": "Order",
+                "message": message
+            }
+        )
+
+        signed_order = self._account.sign_message(encoded)
+        order_hash = "0x" + signed_order.message_hash.hex()
+        signature = "0x" + signed_order.signature.hex()
+
+        order_payload = {
+            "pricePerShare": str(price_wei),
+            "strategy": "LIMIT",
+            "order": {
+                "salt": str(salt),
+                "maker": message["maker"],
+                "signer": message["signer"],
+                "taker": message["taker"],
+                "tokenId": str(token_id),
+                "makerAmount": str(maker_amount),
+                "takerAmount": str(taker_amount),
+                "expiration": str(PREDICT_LIMIT_ORDER_EXPIRATION),
+                "nonce": "0",
+                "feeRateBps": str(fee_rate_bps),
+                "side": order_side,
+                "signatureType": 0,
+                "hash": order_hash,
+                "signature": signature
+            }
+        }
+        if is_post_only:
+            order_payload["isPostOnly"] = True
+        
+        return await self.create_order(order_payload, return_full_response=return_full_response)
+
+    async def smart_minimum_order(
+        self,
+        market: dict[str, Any],
+        outcome_name: str,
+        price: float | int | str | Decimal,
+        side: str = "BUY",
+        *,
+        min_order_value: float | int | str | Decimal = PREDICT_MIN_ORDER_VALUE,
+        is_post_only: bool = True,
+        return_full_response: bool = False,
+    ) -> dict | None:
+        """Place the smallest whole-share limit order that passes Predict's minimum value."""
+        size = self.minimum_order_size(price, min_order_value)
+        notional = Decimal(str(price)) * size
+        logger.info(
+            "Predict.fun smart minimum order: side=%s price=%s size=%s notional=%s min=%s post_only=%s",
+            side.upper(),
+            price,
+            size,
+            notional,
+            min_order_value,
+            is_post_only,
+        )
+        return await self.place_limit_order(
+            market=market,
+            outcome_name=outcome_name,
+            side=side,
+            price=price,
+            size=size,
+            is_post_only=is_post_only,
+            return_full_response=return_full_response,
+        )
 
     async def cancel_orders(self, ids: list[str]) -> dict | None:
         """Remove orders from the orderbook."""
@@ -262,16 +517,16 @@ class PredictClient:
             headers["x-api-key"] = self._predict.credentials
         
         try:
-            async with httpx.AsyncClient() as client:
+            async with self._http_client() as client:
                 resp = await client.post(url, headers=headers, json={"data": {"ids": ids}}, timeout=15)
                 resp.raise_for_status()
                 return resp.json()
         except httpx.HTTPStatusError as e:
-            logger.error("Predict.fun cancel orders failed: %s %s", e.response.status_code, e.response.text[:200])
+            logger.error("Predict.fun cancel orders failed: %s %s", e.response.status_code, e.response.text)
+            raise e
         except Exception as e:
             logger.error("Predict.fun cancel orders error: %s", e)
-            
-        return None
+            raise e
 
     @staticmethod
     async def get_start_price(crypto: str = "btc", offset: int = 0) -> float | None:
