@@ -11,7 +11,6 @@ from bot.predict.client import PredictClient
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-FORCE_SMART_ORDER_MAINNET_ENV = "PREDICT_SMART_ORDER_MAINNET"
 
 
 def _pretty_json(data):
@@ -86,8 +85,6 @@ def test_predict_smart_minimum_order():
 
 async def _test_predict_smart_minimum_order():
     config = load_config(validate=False)
-    if os.getenv(FORCE_SMART_ORDER_MAINNET_ENV) == "1":
-        config.predict.is_test = False
 
     client = PredictClient(config)
     price = Decimal("0.01")
