@@ -8,6 +8,7 @@ When exchanges move >$50 but Chainlink hasn't updated, shares are mispriced.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -175,4 +176,100 @@ def get_signal(
         entry_price=entry_price,
         bid_price=bid_price,
         ask_price=ask_price,
+    )
+
+
+# ── Latency-based probability signal ────────────────────────────
+
+def estimate_up_probability(diff: float, k: float = 0.04) -> float:
+    """Map a USD price difference to P(up) via sigmoid.
+
+    ``diff`` = avg_exchange_price - open_price.
+    Positive diff → exchanges moved up → Chainlink likely to follow → P(up) > 0.5.
+
+    Args:
+        diff: price difference in USD.
+        k: steepness — larger values mean the curve saturates faster.
+            With k=0.04: $25 → 73%, $50 → 88%, $100 → 98%.
+
+    Returns:
+        Probability in [0, 1].
+    """
+    return 1.0 / (1.0 + math.exp(-k * diff))
+
+
+@dataclass(frozen=True)
+class LatencySignal:
+    """Signal from the latency-based probability model."""
+    side: str              # "up" or "down"
+    diff: float            # avg_exchange - open_price (USD)
+    p_up: float            # modeled P(up)
+    edge: float            # modeled_prob - market_price
+    ev: float              # edge / market_price — expected return per dollar risked
+    market_price: float    # current ask we'd buy at
+    binance_price: float
+    coinbase_price: float
+    open_price: float
+
+    @property
+    def side_label(self) -> str:
+        return "YES" if self.side == "up" else "NO"
+
+
+def get_latency_signal(
+    binance_price: float,
+    coinbase_price: float,
+    open_price: float,
+    yes_price: float,
+    no_price: float,
+    k: float = 0.04,
+) -> LatencySignal:
+    """Compute the latency-arbitrage signal snapshot.
+
+    Always returns a ``LatencySignal`` with the modeled probability,
+    edge, and expected value so callers can decide entry, exit, or
+    stop-loss thresholds themselves.
+
+    Args:
+        binance_price: latest Binance BTC price.
+        coinbase_price: latest Coinbase BTC price.
+        open_price: the 5-min window's Chainlink open price.
+        yes_price: current ask price for "Up" outcome.
+        no_price: current ask price for "Down" outcome.
+        k: sigmoid steepness (default 0.04).
+
+    Returns:
+        A ``LatencySignal`` with edge and ev fields.
+    """
+    avg_price = (binance_price + coinbase_price) / 2
+    diff = avg_price - open_price
+    p_up = estimate_up_probability(diff, k)
+
+    # Model leans up → only consider buying "yes"; leans down → only "no".
+    if p_up >= 0.5:
+        side = "up"
+        edge = p_up - yes_price
+        market_price = yes_price
+    else:
+        side = "down"
+        edge = (1.0 - p_up) - no_price
+        market_price = no_price
+
+    ev = edge / market_price if market_price > 0 else float("inf")
+
+    logger.debug(
+        "LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f market=$%.2f",
+        side, diff, p_up, edge, ev, market_price,
+    )
+
+    return LatencySignal(
+        side=side,
+        diff=diff,
+        p_up=p_up,
+        edge=edge,
+        ev=ev,
+        market_price=market_price,
+        binance_price=binance_price,
+        coinbase_price=coinbase_price,
+        open_price=open_price,
     )
