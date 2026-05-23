@@ -1,5 +1,5 @@
 import logging
-from bot.signals.divergence import estimate_up_probability, get_expected_latency_signal, get_current_latency_signal
+from bot.signals.divergence import estimate_up_probability, get_expected_latency_signal, get_current_latency_signal, get_combined_latency_signal
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -345,6 +345,42 @@ def test_odds_rate_computation():
         f"odds_rate mismatch: {sig_down.odds_rate} != {expected_odds_rate_down}"
 
     logger.info("odds_rate computation tests passed")
+
+
+def test_get_combined_latency_signal():
+    """
+    Test get_combined_latency_signal which combines current and forward models.
+    """
+    analysis = get_combined_latency_signal(
+        binance_price=70030.0,
+        coinbase_price=70030.0,
+        chainlink_price=70000.0,
+        open_price=70000.0,
+        yes_price=0.60,
+        no_price=0.48,
+    )
+    
+    # Check basic properties
+    assert analysis.binance_price == 70030.0
+    assert analysis.coinbase_price == 70030.0
+    assert analysis.chainlink_price == 70000.0
+    assert analysis.open_price == 70000.0
+    assert analysis.yes_price == 0.60
+    assert analysis.no_price == 0.48
+    
+    # Current model is evaluated using chainlink_price (70000.0) vs open_price (70000.0) -> diff = 0
+    assert analysis.current_model.diff == 0.0
+    assert analysis.current_model.p_up == 0.5
+    assert analysis.current_model.side == "up"
+    assert analysis.current_model.edge < 0
+    
+    # Forward model is evaluated using avg(binance, coinbase) = 70030.0 vs open_price = 70000.0 -> diff = 30.0
+    assert analysis.forward_model.diff == 30.0
+    assert analysis.forward_model.p_up > 0.5
+    assert analysis.forward_model.side == "up"
+    assert analysis.forward_model.edge > 0
+    
+    logger.info("Combined latency analysis tests passed")
 
 
 # Command to run:

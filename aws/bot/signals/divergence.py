@@ -240,6 +240,69 @@ def _compute_odds_rate(p_up: float, side: str, yes_price: float, no_price: float
     return modeled_prob / market_prob - 1.0
 
 
+@dataclass(frozen=True)
+class LatencyModel:
+    """Model evaluation for a specific price vs open price."""
+    diff: float            # target_price - open_price (USD)
+    p_up: float            # modeled P(up)
+    side: str              # "up" or "down"
+    side_price: float      # current ask we'd buy at
+    edge: float            # modeled_prob - side_price
+    ev: float              # edge / side_price
+    odds_rate: float       # 5-min market odds rate vs current price gap
+
+    @property
+    def side_label(self) -> str:
+        return "YES" if self.side == "up" else "NO"
+
+
+@dataclass(frozen=True)
+class LatencyAnalysis:
+    """Combined latency analysis containing both current and forward-looking models."""
+    open_price: float
+    binance_price: float
+    coinbase_price: float
+    chainlink_price: float
+    yes_price: float
+    no_price: float
+    current_model: LatencyModel
+    forward_model: LatencyModel
+
+
+def _evaluate_model(
+    target_price: float,
+    open_price: float,
+    yes_price: float,
+    no_price: float,
+    k: float = 0.04,
+) -> LatencyModel:
+    """Helper to evaluate latency model given a target price."""
+    diff = target_price - open_price
+    p_up = estimate_up_probability(diff, k)
+
+    if p_up >= 0.5:
+        side = "up"
+        edge = p_up - yes_price
+        side_price = yes_price
+    else:
+        side = "down"
+        edge = (1.0 - p_up) - no_price
+        side_price = no_price
+
+    ev = edge / side_price if side_price > 0 else float("inf")
+    odds_rate = _compute_odds_rate(p_up, side, yes_price, no_price)
+
+    return LatencyModel(
+        diff=diff,
+        p_up=p_up,
+        side=side,
+        side_price=side_price,
+        edge=edge,
+        ev=ev,
+        odds_rate=odds_rate,
+    )
+
+
 def get_expected_latency_signal(
     binance_price: float,
     coinbase_price: float,
@@ -267,38 +330,25 @@ def get_expected_latency_signal(
         A ``LatencySignal`` with edge and ev fields.
     """
     avg_price = (binance_price + coinbase_price) / 2
-    diff = avg_price - open_price
-    p_up = estimate_up_probability(diff, k)
-
-    if p_up >= 0.5:
-        side = "up"
-        edge = p_up - yes_price
-        side_price = yes_price
-    else:
-        side = "down"
-        edge = (1.0 - p_up) - no_price
-        side_price = no_price
-
-    ev = edge / side_price if side_price > 0 else float("inf")
-    odds_rate = _compute_odds_rate(p_up, side, yes_price, no_price)
+    model = _evaluate_model(avg_price, open_price, yes_price, no_price, k)
 
     logger.debug(
         "EXPECTED_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f odds_rate=%+.3f",
-        side, diff, p_up, edge, ev, side_price, odds_rate,
+        model.side, model.diff, model.p_up, model.edge, model.ev, model.side_price, model.odds_rate,
     )
 
     return LatencySignal(
-        side=side,
-        diff=diff,
-        p_up=p_up,
-        edge=edge,
-        ev=ev,
-        side_price=side_price,
+        side=model.side,
+        diff=model.diff,
+        p_up=model.p_up,
+        edge=model.edge,
+        ev=model.ev,
+        side_price=model.side_price,
         chainlink_price=chainlink_price,
         binance_price=binance_price,
         coinbase_price=coinbase_price,
         open_price=open_price,
-        odds_rate=odds_rate,
+        odds_rate=model.odds_rate,
     )
 
 
@@ -327,36 +377,62 @@ def get_current_latency_signal(
     Returns:
         A ``LatencySignal`` with edge, ev, and odds_rate fields.
     """
-    diff = chainlink_price - open_price
-    p_up = estimate_up_probability(diff, k)
-
-    if p_up >= 0.5:
-        side = "up"
-        edge = p_up - yes_price
-        side_price = yes_price
-    else:
-        side = "down"
-        edge = (1.0 - p_up) - no_price
-        side_price = no_price
-
-    ev = edge / side_price if side_price > 0 else float("inf")
-    odds_rate = _compute_odds_rate(p_up, side, yes_price, no_price)
+    model = _evaluate_model(chainlink_price, open_price, yes_price, no_price, k)
 
     logger.debug(
         "CURRENT_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f odds_rate=%+.3f",
-        side, diff, p_up, edge, ev, side_price, odds_rate,
+        model.side, model.diff, model.p_up, model.edge, model.ev, model.side_price, model.odds_rate,
     )
 
     return LatencySignal(
-        side=side,
-        diff=diff,
-        p_up=p_up,
-        edge=edge,
-        ev=ev,
-        side_price=side_price,
+        side=model.side,
+        diff=model.diff,
+        p_up=model.p_up,
+        edge=model.edge,
+        ev=model.ev,
+        side_price=model.side_price,
         chainlink_price=chainlink_price,
         binance_price=0.0,
         coinbase_price=0.0,
         open_price=open_price,
-        odds_rate=odds_rate,
+        odds_rate=model.odds_rate,
+    )
+
+
+def get_combined_latency_signal(
+    binance_price: float,
+    coinbase_price: float,
+    chainlink_price: float,
+    open_price: float,
+    yes_price: float,
+    no_price: float,
+    k: float = 0.04,
+) -> LatencyAnalysis:
+    """Get a combined latency signal analysis with both current and expected models."""
+    current_model = _evaluate_model(
+        target_price=chainlink_price,
+        open_price=open_price,
+        yes_price=yes_price,
+        no_price=no_price,
+        k=k,
+    )
+    
+    avg_exchange = (binance_price + coinbase_price) / 2
+    forward_model = _evaluate_model(
+        target_price=avg_exchange,
+        open_price=open_price,
+        yes_price=yes_price,
+        no_price=no_price,
+        k=k,
+    )
+    
+    return LatencyAnalysis(
+        open_price=open_price,
+        binance_price=binance_price,
+        coinbase_price=coinbase_price,
+        chainlink_price=chainlink_price,
+        yes_price=yes_price,
+        no_price=no_price,
+        current_model=current_model,
+        forward_model=forward_model,
     )
