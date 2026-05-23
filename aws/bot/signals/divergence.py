@@ -201,34 +201,58 @@ def estimate_up_probability(diff: float, k: float = 0.04) -> float:
 @dataclass(frozen=True)
 class LatencySignal:
     """Signal from the latency-based probability model."""
-    side: str              # "up" or "down"
-    diff: float            # avg_exchange - open_price (USD)
+    diff: float            # price_source - open_price (USD)
     p_up: float            # modeled P(up)
-    edge: float            # modeled_prob - market_price
-    ev: float              # edge / market_price — expected return per dollar risked
-    market_price: float    # current ask we'd buy at
+    side: str              # "up" or "down"
+    side_price: float      # current ask we'd buy at
+    edge: float            # modeled_prob - side_price
+    ev: float              # edge / side_price — expected return per dollar risked
+    chainlink_price: float
     binance_price: float
     coinbase_price: float
     open_price: float
+    odds_rate: float       # 5-min market odds rate vs current price gap
 
     @property
     def side_label(self) -> str:
         return "YES" if self.side == "up" else "NO"
 
 
-def get_latency_signal(
+def _compute_odds_rate(p_up: float, side: str, yes_price: float, no_price: float) -> float:
+    """Compute the 5-min market odds rate vs current price gap.
+
+    The odds rate compares the model's probability for the chosen side
+    against the market's implied probability (the ask price).
+    A positive value means the model sees better odds than the market offers.
+
+    Returns:
+        Ratio of modeled_prob / market_price - 1.  Positive = model favors entry.
+    """
+    if side == "up":
+        modeled_prob = p_up
+        market_prob = yes_price
+    else:
+        modeled_prob = 1.0 - p_up
+        market_prob = no_price
+
+    if market_prob <= 0:
+        return float("inf")
+    return modeled_prob / market_prob - 1.0
+
+
+def get_expected_latency_signal(
     binance_price: float,
     coinbase_price: float,
     open_price: float,
     yes_price: float,
     no_price: float,
+    chainlink_price: float = 0.0,
     k: float = 0.04,
 ) -> LatencySignal:
-    """Compute the latency-arbitrage signal snapshot.
+    """Compute the latency-arbitrage signal from exchange prices.
 
-    Always returns a ``LatencySignal`` with the modeled probability,
-    edge, and expected value so callers can decide entry, exit, or
-    stop-loss thresholds themselves.
+    Uses the average of Binance and Coinbase as the "expected" future
+    price and compares against the 5-min window's open price.
 
     Args:
         binance_price: latest Binance BTC price.
@@ -236,6 +260,7 @@ def get_latency_signal(
         open_price: the 5-min window's Chainlink open price.
         yes_price: current ask price for "Up" outcome.
         no_price: current ask price for "Down" outcome.
+        chainlink_price: latest Chainlink price (for reference).
         k: sigmoid steepness (default 0.04).
 
     Returns:
@@ -245,21 +270,21 @@ def get_latency_signal(
     diff = avg_price - open_price
     p_up = estimate_up_probability(diff, k)
 
-    # Model leans up → only consider buying "yes"; leans down → only "no".
     if p_up >= 0.5:
         side = "up"
         edge = p_up - yes_price
-        market_price = yes_price
+        side_price = yes_price
     else:
         side = "down"
         edge = (1.0 - p_up) - no_price
-        market_price = no_price
+        side_price = no_price
 
-    ev = edge / market_price if market_price > 0 else float("inf")
+    ev = edge / side_price if side_price > 0 else float("inf")
+    odds_rate = _compute_odds_rate(p_up, side, yes_price, no_price)
 
     logger.debug(
-        "LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f market=$%.2f",
-        side, diff, p_up, edge, ev, market_price,
+        "EXPECTED_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f odds_rate=%+.3f",
+        side, diff, p_up, edge, ev, side_price, odds_rate,
     )
 
     return LatencySignal(
@@ -268,8 +293,70 @@ def get_latency_signal(
         p_up=p_up,
         edge=edge,
         ev=ev,
-        market_price=market_price,
+        side_price=side_price,
+        chainlink_price=chainlink_price,
         binance_price=binance_price,
         coinbase_price=coinbase_price,
         open_price=open_price,
+        odds_rate=odds_rate,
+    )
+
+
+def get_current_latency_signal(
+    chainlink_price: float,
+    open_price: float,
+    yes_price: float,
+    no_price: float,
+    k: float = 0.04,
+) -> LatencySignal:
+    """Compute the latency signal from the current Chainlink price.
+
+    Unlike ``get_expected_latency_signal`` which uses the leading exchange
+    average, this uses the *current* Chainlink price directly.  This is
+    useful for comparing the "real-time settled" view against the market
+    odds and for modelling the 5-min market odds rate vs the current
+    price gap.
+
+    Args:
+        chainlink_price: latest Chainlink BTC price.
+        open_price: the 5-min window's Chainlink open price.
+        yes_price: current ask price for "Up" outcome.
+        no_price: current ask price for "Down" outcome.
+        k: sigmoid steepness (default 0.04).
+
+    Returns:
+        A ``LatencySignal`` with edge, ev, and odds_rate fields.
+    """
+    diff = chainlink_price - open_price
+    p_up = estimate_up_probability(diff, k)
+
+    if p_up >= 0.5:
+        side = "up"
+        edge = p_up - yes_price
+        side_price = yes_price
+    else:
+        side = "down"
+        edge = (1.0 - p_up) - no_price
+        side_price = no_price
+
+    ev = edge / side_price if side_price > 0 else float("inf")
+    odds_rate = _compute_odds_rate(p_up, side, yes_price, no_price)
+
+    logger.debug(
+        "CURRENT_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f odds_rate=%+.3f",
+        side, diff, p_up, edge, ev, side_price, odds_rate,
+    )
+
+    return LatencySignal(
+        side=side,
+        diff=diff,
+        p_up=p_up,
+        edge=edge,
+        ev=ev,
+        side_price=side_price,
+        chainlink_price=chainlink_price,
+        binance_price=0.0,
+        coinbase_price=0.0,
+        open_price=open_price,
+        odds_rate=odds_rate,
     )
