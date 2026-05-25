@@ -66,13 +66,8 @@ class PredictMarket:
 
     @classmethod
     def from_api(cls, raw: dict[str, Any]) -> PredictMarket | None:
-        """Build from a ``GET /v1/markets`` or ``GET /v1/markets/{id}`` payload."""
-        try:
-            market_id = int(raw.get("id"))
-        except (TypeError, ValueError):
-            return None
-
-        outcomes = raw.get("outcomes") or []
+        market_id = int(raw.get("id"))
+        outcomes = raw.get("outcomes")
         yes_id, no_id = "", ""
         for o in outcomes:
             name = o.get("name")
@@ -85,19 +80,19 @@ class PredictMarket:
 
         return cls(
             id=market_id,
-            slug=str(raw.get("slug") or raw.get("categorySlug") or ""),
-            condition_id=str(raw.get("conditionId") or ""),
-            title=str(raw.get("title") or ""),
-            question=str(raw.get("question") or ""),
-            is_neg_risk=bool(raw.get("isNegRisk", False)),
-            fee_rate_bps=int(raw.get("feeRateBps", 0) or 0),
+            slug=str(raw.get("categorySlug")),
+            condition_id=str(raw.get("conditionId")),
+            title=str(raw.get("title")),
+            question=str(raw.get("question")),
+            is_neg_risk=bool(raw.get("isNegRisk")),
+            fee_rate_bps=int(raw.get("feeRateBps")),
             yes_token_id=yes_id,
             no_token_id=no_id,
             price_feed_id=variant.get("priceFeedId"),
             price_feed_symbol=variant.get("priceFeedSymbol"),
             price_feed_provider=variant.get("priceFeedProvider"),
-            start_price=_to_optional_float(variant.get("startPrice")),
-            end_price=_to_optional_float(variant.get("endPrice")),
+            start_price=variant.get("startPrice"),
+            end_price=variant.get("endPrice"),
         )
 
 
