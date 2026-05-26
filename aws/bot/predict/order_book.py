@@ -18,9 +18,9 @@ import time
 from typing import Any
 
 
-def _to_int(price: float | str) -> int:
+def _to_int(price: float) -> int:
     """Dollar value → deci-cent integer (e.g. 0.92 → 9200) for fast key lookup."""
-    return round(float(price) * 10_000)
+    return round(price * 10_000)
 
 
 def _to_dollars(price_int: int) -> float:
@@ -57,30 +57,19 @@ class PredictOrderBook:
               }
             }
         """
-        data = payload.get("data", payload) if isinstance(payload, dict) else payload
+        data = payload.get("data")
 
-        if self.market_id is not None and "marketId" in data:
-            try:
-                incoming = int(data["marketId"])
-            except (TypeError, ValueError):
-                return
-            if incoming != self.market_id:
-                return
+        if data["marketId"] != self.market_id:
+            raise ValueError(f"Market ID mismatch: {data['marketId']} != {self.market_id}")
 
         self.bids.clear()
-        for entry in data.get("bids") or []:
-            parsed = _parse_level(entry)
-            if parsed is None:
-                continue
-            price_int, size = parsed
+        for entry in data.get("bids"):
+            price_int, size = _parse_level(entry)
             self.bids[price_int] = size
 
         self.asks.clear()
-        for entry in data.get("asks") or []:
-            parsed = _parse_level(entry)
-            if parsed is None:
-                continue
-            price_int, size = parsed
+        for entry in data.get("asks"):
+            price_int, size = _parse_level(entry)
             self.asks[price_int] = size
 
         self.best_bid = max(self.bids.keys()) if self.bids else 0
@@ -153,13 +142,4 @@ class PredictOrderBook:
 
 def _parse_level(entry: Any) -> tuple[int, float] | None:
     """Parse one `[price, size]` book level. Returns None for malformed/zero entries."""
-    if not isinstance(entry, (list, tuple)) or len(entry) < 2:
-        return None
-    try:
-        price = float(entry[0])
-        size = float(entry[1])
-    except (TypeError, ValueError):
-        return None
-    if size <= 0 or price <= 0:
-        return None
-    return _to_int(price), size
+    return _to_int(entry[0]), entry[1]
