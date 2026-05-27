@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, asdict
+from typing import Literal, Any
 
 from ..state.polymarket_order_book import PolymarketOrderBook
 
@@ -267,6 +267,9 @@ class LatencyAnalysis:
     no_price: float
     current_model: LatencyModel
     forward_model: LatencyModel
+
+    def to_snapshot(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 def _evaluate_model(

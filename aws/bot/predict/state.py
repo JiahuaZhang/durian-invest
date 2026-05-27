@@ -82,6 +82,10 @@ class PredictState:
         self.trade: dict[str, Any] | None = None
         self.exit_decision: PredictExitDecision | None = None
 
+        self.need_log = cfg.use_proxy
+        self.log_path = Path(__file__).resolve().parent.parent / "logs" / f"{self.slug}.jsonl"
+        self.log_path.parent.mkdir(parents=True, exist_ok=True)
+
     @property
     def market_id(self) -> int:
         return int(self.market["id"])
@@ -156,7 +160,7 @@ class PredictState:
             case _:
                 raise ValueError(f"Unknown predict status: {self.status!r}")
 
-    def _evaluate_signal(self, source: str, need_log: bool, log_path: Path | None) -> LatencyAnalysis | None:
+    def _evaluate_signal(self, source: str) -> LatencyAnalysis | None:
         prices = self.orderbook.get_price()
         yes_ask = prices["yes"]["ask"]
         no_ask = prices["no"]["ask"]
@@ -170,40 +174,20 @@ class PredictState:
             no_price=no_ask,
         )
 
-        if need_log and log_path:
-            self._persist_snapshot(source, analysis, log_path)
+        if self.need_log:
+            self._persist_snapshot(source, analysis)
 
         return analysis
 
-    def _persist_snapshot(
-        self,
-        source: str,
-        analysis: LatencyAnalysis,
-        log_path: Path,
-    ) -> None:
-        prices = self.orderbook.get_price()
+    def _persist_snapshot(self, source: str, analysis: LatencyAnalysis) -> None:
         record: dict[str, Any] = {
             "time": time.monotonic(),
-            "slug": self.slug,
-            "market_id": self.market_id,
             "bot_state": self.status.value,
             "trigger_source": source,
-            "current_model": asdict(analysis.current_model),
-            "forward_model": asdict(analysis.forward_model),
-            "open_price": analysis.open_price,
-            "binance_price": analysis.binance_price,
-            "coinbase_price": analysis.coinbase_price,
-            "chainlink_price": analysis.chainlink_price,
-            "yes_bid": prices["yes"]["bid"],
-            "yes_ask": prices["yes"]["ask"],
-            "no_bid": prices["no"]["bid"],
-            "no_ask": prices["no"]["ask"],
-            "imbalance_ratio": self.orderbook.get_imbalance(
-                level=self.cfg.signals.imbalance_levels,
-            ),
+            "analysis": analysis.to_snapshot()
         }
         try:
-            with log_path.open("a", encoding="utf-8") as fh:
+            with self.log_path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record) + "\n")
         except OSError as exc:
             logger.warning("Failed to persist latency snapshot: %s", exc)
@@ -214,7 +198,7 @@ class PredictState:
             self._order_task.cancel()
             self._order_task = None
 
-    def tick(self, source: str, need_log: bool, log_path: Path | None) -> None:
+    def tick(self, source: str) -> None:
         """
         Evaluate state machine for this tick.
         Called by manager on every price update or orderbook update.
@@ -222,7 +206,7 @@ class PredictState:
         if self.status not in (PredictStatus.READY, PredictStatus.HOLDING, PredictStatus.WATCHING):
             return
 
-        analysis = self._evaluate_signal(source, need_log, log_path)
+        analysis = self._evaluate_signal(source)
         if analysis is None:
             return
 
