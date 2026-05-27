@@ -205,7 +205,7 @@ class PredictState:
         forward = analysis.forward_model
         # TODO: calibrate this threshold from persisted data
         ev_threshold = 0.05
-        if forward.ev >= ev_threshold and forward.edge > 0:
+        if forward.ev >= ev_threshold:
             logger.info(
                 "ENTRY SIGNAL | slug=%s side=%s ev=%+.3f edge=%+.4f "
                 "diff=$%+.2f odds_rate=%+.3f",
@@ -254,10 +254,7 @@ class PredictState:
 
     # ── Order execution (async, non-blocking) ─────────────────────
 
-    async def _submit_buy_order(
-        self,
-        analysis: LatencyAnalysis,
-    ) -> None:
+    async def _submit_buy_order(self, analysis: LatencyAnalysis) -> None:
         """Submit a buy order asynchronously. Transitions state on result."""
         forward = analysis.forward_model
         outcome_name = "Up" if forward.side == "up" else "Down"

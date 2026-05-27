@@ -129,6 +129,10 @@ async def _test_predict_smart_minimum_order():
         logger.warning("Create order response had no order id, skipping cancel.")
         return
 
+    order_hash = create_response.get("data").get("orderHash")
+    hash_response = await client.get_order_by_hash(order_hash, return_full_response=True)
+    logger.info("get_order_by_hash response:\n%s", _pretty_json(hash_response))
+
     cancel_response = await client.cancel_orders([order_id])
     logger.info("cancel order response:\n%s", _pretty_json(cancel_response))
 

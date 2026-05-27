@@ -352,6 +352,103 @@ class PredictClient:
             logger.error("Predict.fun create order error: %s", e)
             raise e
 
+    async def get_order_by_hash(
+        self,
+        order_hash: str,
+        return_full_response: bool = True,
+    ) -> dict | None:
+        """Fetch an order by its hash from Predict API.
+
+        Calls ``GET /v1/orders/{hash}``
+
+        The endpoint requires JWT authentication and retrieves order information 
+        for one of your own orders by its hash.
+
+        Successful Response Structure:
+        - `id` (str): Internal Predict order ID
+        - `marketId` (int): Market the order belongs to
+        - `currency` (str): Currency used (e.g., "USDC")
+        - `amount` (str): Total order size
+        - `amountFilled` (str): Amount of the order that has been filled so far. 
+            Yes, orders can be partially filled. If `amountFilled` > 0 but < `amount`, 
+            it's a partial fill.
+        - `isNegRisk` (bool), `isYieldBearing` (bool): Market details
+        - `strategy` (str): "LIMIT" or "MARKET"
+        - `status` (str): Current status of the order. Possible values:
+            - `OPEN`: Order is placed and resting on the orderbook. May be partially filled.
+            - `FILLED`: Order is completely filled.
+            - `EXPIRED`: Order reached its expiration timestamp without being completely filled.
+            - `CANCELLED`: Order was manually cancelled.
+            - `INVALIDATED`: Order is no longer valid (e.g., insufficient funds).
+        - `rewardEarningRate` (float): Associated rewards earning rate.
+        - `order` (dict): The original order payload (maker, taker, signature, expiration, etc.)
+
+        Typical Time to Fill:
+        - Fill times depend entirely on market conditions (liquidity, price action). 
+        - For latency arbitrage bots, if the target price is already crossed by the book, 
+          the order typically fills instantly as the transaction goes on-chain (usually seconds on Predict). 
+        - If the price is deeper in the book, it rests (`OPEN`) until matched.
+
+        Possible Errors:
+        - 400 Bad Request: Usually if the hash format is incorrect.
+        - 401/403 Unauthorized: JWT is missing, invalid, or expired.
+        - 404 Not Found: Order hash does not exist or doesn't belong to the authenticated user.
+
+        Example Real Successful Response (dict):
+        {
+            "id": "123e4567-e89b-12d3-a456-426614174000",
+            "marketId": 1234,
+            "currency": "USDC",
+            "amount": "10000000000000000000",        # 10 shares
+            "amountFilled": "5000000000000000000",  # 5 shares filled (Partial Fill)
+            "isNegRisk": False,
+            "isYieldBearing": False,
+            "strategy": "LIMIT",
+            "status": "OPEN",
+            "rewardEarningRate": 0.0,
+            "order": {
+                "hash": "0x123abc...",
+                "salt": "843920...",
+                "maker": "0xYourAddress...",
+                "signer": "0xYourAddress...",
+                "taker": "0x0000000000000000000000000000000000000000",
+                "tokenId": "123456789",
+                "makerAmount": "10000000000000000000",
+                "takerAmount": "5000000000000000000",
+                "expiration": "1735689600",
+                "nonce": "0",
+                "feeRateBps": "200",
+                "side": 0,
+                "signatureType": 0,
+                "signature": "0xabc..."
+            }
+        }
+        """
+        jwt = await self.get_jwt()
+        if not jwt:
+            logger.error("Cannot fetch order: Authentication failed.")
+            return None
+            
+        url = f"{self._predict.api_host}/v1/orders/{order_hash}"
+        headers = {
+            "Authorization": f"Bearer {jwt}",
+        }
+        if self._predict.credentials:
+            headers["x-api-key"] = self._predict.credentials
+            
+        try:
+            async with self._http_client() as client:
+                resp = await client.get(url, headers=headers, timeout=15)
+                resp.raise_for_status()
+                body = resp.json()
+                return body if return_full_response else body.get("data")
+        except httpx.HTTPStatusError as e:
+            logger.error("Predict.fun get order by hash failed: %s %s", e.response.status_code, e.response.text)
+            raise e
+        except Exception as e:
+            logger.error("Predict.fun get order by hash error: %s", e)
+            raise e
+
     @staticmethod
     def _find_outcome(market: dict[str, Any], outcome_name: str) -> dict[str, Any]:
         """Find an outcome by name (e.g. 'Up', 'Down') in a market dict."""
@@ -370,6 +467,7 @@ class PredictClient:
         size: float | int | str | Decimal,
         is_post_only: bool = False,
         return_full_response: bool = False,
+        expiration: int | None = None,
     ) -> dict | None:
         """Place a limit order by building and signing the required EIP-712 payload.
 
@@ -408,6 +506,7 @@ class PredictClient:
             raise ValueError(f"Invalid side {side}")
 
         salt = secrets.randbelow(PREDICT_MAX_SALT + 1)
+        exp_time = expiration if expiration is not None else PREDICT_LIMIT_ORDER_EXPIRATION
 
         domain = {
             "name": PREDICT_PROTOCOL_NAME,
@@ -424,7 +523,7 @@ class PredictClient:
             "tokenId": int(token_id),
             "makerAmount": maker_amount,
             "takerAmount": taker_amount,
-            "expiration": PREDICT_LIMIT_ORDER_EXPIRATION,
+            "expiration": exp_time,
             "nonce": 0,
             "feeRateBps": fee_rate_bps,
             "side": order_side,
@@ -455,7 +554,7 @@ class PredictClient:
                 "tokenId": str(token_id),
                 "makerAmount": str(maker_amount),
                 "takerAmount": str(taker_amount),
-                "expiration": str(PREDICT_LIMIT_ORDER_EXPIRATION),
+                "expiration": str(exp_time),
                 "nonce": "0",
                 "feeRateBps": str(fee_rate_bps),
                 "side": order_side,
@@ -479,18 +578,25 @@ class PredictClient:
         min_order_value: float | int | str | Decimal = PREDICT_MIN_ORDER_VALUE,
         is_post_only: bool = True,
         return_full_response: bool = False,
+        auto_expire_seconds: int = 130,
     ) -> dict | None:
-        """Place the smallest whole-share limit order that passes Predict's minimum value."""
+        """Place the smallest whole-share limit order that passes Predict's minimum value.
+        
+        The order is configured to automatically expire if not filled within 
+        `auto_expire_seconds` (default 130 seconds; minimum allowed by API is 120s).
+        """
         size = self.minimum_order_size(price, min_order_value)
         notional = Decimal(str(price)) * size
+        expiration_ts = int(time.time()) + auto_expire_seconds
         logger.info(
-            "Predict.fun smart minimum order: side=%s price=%s size=%s notional=%s min=%s post_only=%s",
+            "Predict.fun smart minimum order: side=%s price=%s size=%s notional=%s min=%s post_only=%s exp=%ds",
             side.upper(),
             price,
             size,
             notional,
             min_order_value,
             is_post_only,
+            auto_expire_seconds,
         )
         return await self.place_limit_order(
             market=market,
@@ -500,6 +606,7 @@ class PredictClient:
             size=size,
             is_post_only=is_post_only,
             return_full_response=return_full_response,
+            expiration=expiration_ts,
         )
 
     async def cancel_orders(self, ids: list[str]) -> dict | None:
