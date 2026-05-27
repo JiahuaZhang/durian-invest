@@ -34,6 +34,7 @@ PredictPriceSource = Literal["binance", "coinbase", "chainlink"]
 
 
 class PredictStatus(Enum):
+    INIT = "init"
     READY = "ready"
     BUYING = "buying"
     HOLDING = "holding"
@@ -58,15 +59,13 @@ class PredictState:
         cfg: BotConfig,
         client: PredictClient,
         market: dict[str, Any],
-        *,
-        watching: bool = False,
     ):
         self.cfg = cfg
         self.client = client
         self.market = market
 
         self.start_price = market.get("variantData").get("startPrice")
-        self.status = PredictStatus.WATCHING if watching else PredictStatus.READY
+        self.status = PredictStatus.INIT
         self.orders: list[dict[str, Any]] = []
         self._order_task: asyncio.Task | None = None
 
@@ -109,69 +108,105 @@ class PredictState:
     def price_feed_provider(self) -> str | None:
         return self.market.get("variantData", {}).get("priceFeedProvider")
 
-    @property
-    def prices_ready(self) -> bool:
-        return self.binance_price > 0 and self.coinbase_price > 0 and self.chainlink_price > 0
-
-    def seed_prices(
-        self,
-        *,
-        binance: float = 0.0,
-        coinbase: float = 0.0,
-        chainlink: float = 0.0,
-    ) -> None:
-        """Seed latest prices when activating a new 5-minute state."""
-        now = time.monotonic()
-        for source, price in (
-            ("binance", binance),
-            ("coinbase", coinbase),
-            ("chainlink", chainlink),
-        ):
-            if price > 0:
-                self._set_price(source, price, now)
-
-    def update_price(
-        self,
-        source: PredictPriceSource,
-        price: float,
-    ) -> None:
-        """Update one price source."""
-        self._set_price(source, price, time.monotonic())
-
-    def _set_price(self, source: PredictPriceSource, price: float, updated_at: float) -> None:
-        if price <= 0:
-            return
-        if source == "binance":
-            self.binance_price = price
-        elif source == "coinbase":
-            self.coinbase_price = price
-        elif source == "chainlink":
-            self.chainlink_price = price
-        else:
-            raise ValueError(f"Unknown predict price source: {source!r}")
-        self.last_price_update[source] = updated_at
+    def is_ready(self) -> bool:
+        """Return true if all prices are ready."""
+        return self.start_price > 0 and self.binance_price > 0 and self.coinbase_price > 0 and self.chainlink_price > 0 and self.orderbook.is_ready()
 
     def apply_message(self, message: dict[str, Any]) -> bool:
-        """Route an incoming predict.fun WS frame to the orderbook or price feed."""
-        topic = str(message.get("topic") or "")
-        data = message.get("data") or {}
-
-        if topic.startswith("predictOrderbook/"):
-            return self._apply_orderbook(data)
-
-        return False
-
-    def _apply_orderbook(self, data: dict[str, Any]) -> bool:
-        if "marketId" in data:
-            try:
-                if int(data["marketId"]) != self.market_id:
-                    return False
-            except (TypeError, ValueError):
-                return False
-
+        """Route an incoming predict.fun WS frame to the orderbook"""
+        topic = message.get("topic")
+        if topic != f"predictOrderbook/{self.market_id}":
+            return False    
+        
         before = self.orderbook.last_update
-        self.orderbook.apply(data)
+        self.orderbook.apply(message)
         return self.orderbook.last_update != before
+    
+    def update(self, source: str, args: any) -> None:
+        now = time.monotonic()
+        match source:
+            case 'start price':
+                self.start_price = args
+            case 'orderbook':
+                self.apply_message(args)
+            case 'binance':
+                self.binance_price = args
+                self.last_price_update['binance'] = now
+            case 'coinbase':
+                self.coinbase_price = args
+                self.last_price_update['coinbase'] = now
+            case 'chainlink':
+                self.chainlink_price = args
+                self.last_price_update['chainlink'] = now
+            case _:
+                raise ValueError(f"Unknown source: {source!r}")
+
+        match self.status:
+            case PredictStatus.INIT:
+                if self.is_ready():
+                    self.status = PredictStatus.READY
+            case PredictStatus.STOPPED:
+                return
+            case PredictStatus.READY:
+                pass
+            case PredictStatus.HOLDING:
+                pass
+            case PredictStatus.WATCHING:
+                pass
+            case _:
+                raise ValueError(f"Unknown predict status: {self.status!r}")
+
+    def _evaluate_signal(self, source: str, need_log: bool, log_path: Path | None) -> LatencyAnalysis | None:
+        prices = self.orderbook.get_price()
+        yes_ask = prices["yes"]["ask"]
+        no_ask = prices["no"]["ask"]
+
+        analysis = get_combined_latency_signal(
+            binance_price=self.binance_price,
+            coinbase_price=self.coinbase_price,
+            chainlink_price=self.chainlink_price,
+            start_price=self.start_price,
+            yes_price=yes_ask,
+            no_price=no_ask,
+        )
+
+        if need_log and log_path:
+            self._persist_snapshot(source, analysis, log_path)
+
+        return analysis
+
+    def _persist_snapshot(
+        self,
+        source: str,
+        analysis: LatencyAnalysis,
+        log_path: Path,
+    ) -> None:
+        prices = self.orderbook.get_price()
+        record: dict[str, Any] = {
+            "time": time.monotonic(),
+            "slug": self.slug,
+            "market_id": self.market_id,
+            "bot_state": self.status.value,
+            "trigger_source": source,
+            "current_model": asdict(analysis.current_model),
+            "forward_model": asdict(analysis.forward_model),
+            "open_price": analysis.open_price,
+            "binance_price": analysis.binance_price,
+            "coinbase_price": analysis.coinbase_price,
+            "chainlink_price": analysis.chainlink_price,
+            "yes_bid": prices["yes"]["bid"],
+            "yes_ask": prices["yes"]["ask"],
+            "no_bid": prices["no"]["bid"],
+            "no_ask": prices["no"]["ask"],
+            "imbalance_ratio": self.orderbook.get_imbalance(
+                level=self.cfg.signals.imbalance_levels,
+            ),
+        }
+        try:
+            with log_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record) + "\n")
+        except OSError as exc:
+            logger.warning("Failed to persist latency snapshot: %s", exc)
 
     def stop_orders(self) -> None:
         """Cancel any running order tasks when transitioning to STOPPED."""
@@ -197,63 +232,6 @@ class PredictState:
             self._check_exit_signal(analysis)
         elif self.status == PredictStatus.WATCHING:
             self._log_signal(analysis, source)
-
-    def _evaluate_signal(self, source: str, need_log: bool, log_path: Path | None) -> LatencyAnalysis | None:
-        if not self.prices_ready or not self.start_price or self.start_price <= 0:
-            return None
-
-        prices = self.orderbook.get_price()
-        yes_ask = prices["yes"]["ask"]
-        no_ask = prices["no"]["ask"]
-        if yes_ask <= 0 or no_ask <= 0:
-            return None
-
-        analysis = get_combined_latency_signal(
-            binance_price=self.binance_price,
-            coinbase_price=self.coinbase_price,
-            chainlink_price=self.chainlink_price,
-            open_price=self.start_price,
-            yes_price=yes_ask,
-            no_price=no_ask,
-        )
-
-        if need_log and log_path:
-            self._persist_snapshot(source, analysis, log_path)
-
-        return analysis
-
-    def _persist_snapshot(
-        self,
-        source: str,
-        analysis: LatencyAnalysis,
-        log_path: Path,
-    ) -> None:
-        prices = self.orderbook.get_price()
-        record: dict[str, Any] = {
-            "ts": time.time(),
-            "slug": self.slug,
-            "market_id": self.market_id,
-            "bot_state": self.status.value,
-            "trigger_source": source,
-            "current_model": asdict(analysis.current_model),
-            "forward_model": asdict(analysis.forward_model),
-            "open_price": analysis.open_price,
-            "binance_price": analysis.binance_price,
-            "coinbase_price": analysis.coinbase_price,
-            "chainlink_price": analysis.chainlink_price,
-            "yes_bid": prices["yes"]["bid"],
-            "yes_ask": prices["yes"]["ask"],
-            "no_bid": prices["no"]["bid"],
-            "no_ask": prices["no"]["ask"],
-            "imbalance_ratio": self.orderbook.get_imbalance(
-                level=self.cfg.signals.imbalance_levels,
-            ),
-        }
-        try:
-            with log_path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(record) + "\n")
-        except OSError as exc:
-            logger.warning("Failed to persist latency snapshot: %s", exc)
 
     def _check_entry_signal(self, analysis: LatencyAnalysis) -> None:
         """READY state: evaluate signal and transition to BUYING if criteria met."""

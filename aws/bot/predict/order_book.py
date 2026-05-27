@@ -101,6 +101,9 @@ class PredictOrderBook:
             "no": {"bid": no_bid, "ask": no_ask},
         }
 
+    def is_ready(self) -> bool:
+        return self.best_bid > 0 and self.best_ask > 0 and self.best_ask > self.best_bid
+
     def render(self, level: int = 10) -> None:
         best_bids = sorted(self.bids.items(), key=lambda x: x[0], reverse=True)[:level]
         best_asks = sorted(self.asks.items(), key=lambda x: x[0])[:level]

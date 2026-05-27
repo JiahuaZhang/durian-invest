@@ -123,7 +123,7 @@ def test_get_expected_latency_signal():
         sig = get_expected_latency_signal(
             binance_price=s["binance"],
             coinbase_price=s["coinbase"],
-            open_price=s["open"],
+            start_price=s["open"],
             yes_price=s["yes_price"],
             no_price=s["no_price"],
         )
@@ -230,7 +230,7 @@ def test_get_current_latency_signal():
     for s in scenarios:
         sig = get_current_latency_signal(
             chainlink_price=s["chainlink"],
-            open_price=s["open"],
+            start_price=s["open"],
             yes_price=s["yes_price"],
             no_price=s["no_price"],
         )
@@ -282,7 +282,7 @@ def test_current_vs_expected_consistency():
     When chainlink_price equals the exchange average, both signals should
     produce identical results (same diff, p_up, edge, ev, odds_rate).
     """
-    open_price = 70000.0
+    start_price = 70000.0
     price = 70030.0  # same for all sources
     yes_price = 0.60
     no_price = 0.48
@@ -290,7 +290,7 @@ def test_current_vs_expected_consistency():
     expected = get_expected_latency_signal(
         binance_price=price,
         coinbase_price=price,
-        open_price=open_price,
+        start_price=start_price,
         yes_price=yes_price,
         no_price=no_price,
         chainlink_price=price,
@@ -298,7 +298,7 @@ def test_current_vs_expected_consistency():
 
     current = get_current_latency_signal(
         chainlink_price=price,
-        open_price=open_price,
+        start_price=start_price,
         yes_price=yes_price,
         no_price=no_price,
     )
@@ -322,7 +322,7 @@ def test_odds_rate_computation():
     # Up-leaning scenario: model says 73% up, market asks 0.60
     sig = get_current_latency_signal(
         chainlink_price=70025.0,
-        open_price=70000.0,
+        start_price=70000.0,
         yes_price=0.60,
         no_price=0.45,
     )
@@ -334,7 +334,7 @@ def test_odds_rate_computation():
     # Down-leaning scenario
     sig_down = get_current_latency_signal(
         chainlink_price=69975.0,
-        open_price=70000.0,
+        start_price=70000.0,
         yes_price=0.45,
         no_price=0.60,
     )
@@ -355,7 +355,7 @@ def test_get_combined_latency_signal():
         binance_price=70030.0,
         coinbase_price=70030.0,
         chainlink_price=70000.0,
-        open_price=70000.0,
+        start_price=70000.0,
         yes_price=0.60,
         no_price=0.48,
     )
@@ -364,17 +364,17 @@ def test_get_combined_latency_signal():
     assert analysis.binance_price == 70030.0
     assert analysis.coinbase_price == 70030.0
     assert analysis.chainlink_price == 70000.0
-    assert analysis.open_price == 70000.0
+    assert analysis.start_price == 70000.0
     assert analysis.yes_price == 0.60
     assert analysis.no_price == 0.48
     
-    # Current model is evaluated using chainlink_price (70000.0) vs open_price (70000.0) -> diff = 0
+    # Current model is evaluated using chainlink_price (70000.0) vs start_price (70000.0) -> diff = 0
     assert analysis.current_model.diff == 0.0
     assert analysis.current_model.p_up == 0.5
     assert analysis.current_model.side == "up"
     assert analysis.current_model.edge < 0
     
-    # Forward model is evaluated using avg(binance, coinbase) = 70030.0 vs open_price = 70000.0 -> diff = 30.0
+    # Forward model is evaluated using avg(binance, coinbase) = 70030.0 vs start_price = 70000.0 -> diff = 30.0
     assert analysis.forward_model.diff == 30.0
     assert analysis.forward_model.p_up > 0.5
     assert analysis.forward_model.side == "up"

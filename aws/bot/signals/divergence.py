@@ -63,7 +63,7 @@ class TradeSignal:
     """The exact market state and decision that caused an entry signal."""
     source: PriceSource
     side: str
-    open_price: float | None
+    start_price: float | None
 
     binance_price: float
     coinbase_price: float
@@ -87,7 +87,7 @@ class TradeSignal:
 
 def get_signal(
     source: PriceSource,
-    open_price: float | None,
+    start_price: float | None,
     binance_price: float,
     coinbase_price: float,
     chainlink_price: float,
@@ -164,7 +164,7 @@ def get_signal(
     return TradeSignal(
         source=source,
         side=side,
-        open_price=open_price,
+        start_price=start_price,
         binance_price=binance_price,
         coinbase_price=coinbase_price,
         chainlink_price=chainlink_price,
@@ -184,7 +184,7 @@ def get_signal(
 def estimate_up_probability(diff: float, k: float = 0.04) -> float:
     """Map a USD price difference to P(up) via sigmoid.
 
-    ``diff`` = avg_exchange_price - open_price.
+    ``diff`` = avg_exchange_price - start_price.
     Positive diff → exchanges moved up → Chainlink likely to follow → P(up) > 0.5.
 
     Args:
@@ -201,7 +201,7 @@ def estimate_up_probability(diff: float, k: float = 0.04) -> float:
 @dataclass(frozen=True)
 class LatencySignal:
     """Signal from the latency-based probability model."""
-    diff: float            # price_source - open_price (USD)
+    diff: float            # price_source - start_price (USD)
     p_up: float            # modeled P(up)
     side: str              # "up" or "down"
     side_price: float      # current ask we'd buy at
@@ -210,7 +210,7 @@ class LatencySignal:
     chainlink_price: float
     binance_price: float
     coinbase_price: float
-    open_price: float
+    start_price: float
     odds_rate: float       # 5-min market odds rate vs current price gap
 
     @property
@@ -243,7 +243,7 @@ def _compute_odds_rate(p_up: float, side: str, yes_price: float, no_price: float
 @dataclass(frozen=True)
 class LatencyModel:
     """Model evaluation for a specific price vs open price."""
-    diff: float            # target_price - open_price (USD)
+    diff: float            # target_price - start_price (USD)
     p_up: float            # modeled P(up)
     side: str              # "up" or "down"
     side_price: float      # current ask we'd buy at
@@ -259,7 +259,7 @@ class LatencyModel:
 @dataclass(frozen=True)
 class LatencyAnalysis:
     """Combined latency analysis containing both current and forward-looking models."""
-    open_price: float
+    start_price: float
     binance_price: float
     coinbase_price: float
     chainlink_price: float
@@ -271,13 +271,13 @@ class LatencyAnalysis:
 
 def _evaluate_model(
     target_price: float,
-    open_price: float,
+    start_price: float,
     yes_price: float,
     no_price: float,
     k: float = 0.04,
 ) -> LatencyModel:
     """Helper to evaluate latency model given a target price."""
-    diff = target_price - open_price
+    diff = target_price - start_price
     p_up = estimate_up_probability(diff, k)
 
     if p_up >= 0.5:
@@ -306,7 +306,7 @@ def _evaluate_model(
 def get_expected_latency_signal(
     binance_price: float,
     coinbase_price: float,
-    open_price: float,
+    start_price: float,
     yes_price: float,
     no_price: float,
     chainlink_price: float = 0.0,
@@ -320,7 +320,7 @@ def get_expected_latency_signal(
     Args:
         binance_price: latest Binance BTC price.
         coinbase_price: latest Coinbase BTC price.
-        open_price: the 5-min window's Chainlink open price.
+        start_price: the 5-min window's Chainlink open price.
         yes_price: current ask price for "Up" outcome.
         no_price: current ask price for "Down" outcome.
         chainlink_price: latest Chainlink price (for reference).
@@ -330,7 +330,7 @@ def get_expected_latency_signal(
         A ``LatencySignal`` with edge and ev fields.
     """
     avg_price = (binance_price + coinbase_price) / 2
-    model = _evaluate_model(avg_price, open_price, yes_price, no_price, k)
+    model = _evaluate_model(avg_price, start_price, yes_price, no_price, k)
 
     logger.debug(
         "EXPECTED_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f odds_rate=%+.3f",
@@ -347,14 +347,14 @@ def get_expected_latency_signal(
         chainlink_price=chainlink_price,
         binance_price=binance_price,
         coinbase_price=coinbase_price,
-        open_price=open_price,
+        start_price=start_price,
         odds_rate=model.odds_rate,
     )
 
 
 def get_current_latency_signal(
     chainlink_price: float,
-    open_price: float,
+    start_price: float,
     yes_price: float,
     no_price: float,
     k: float = 0.04,
@@ -369,7 +369,7 @@ def get_current_latency_signal(
 
     Args:
         chainlink_price: latest Chainlink BTC price.
-        open_price: the 5-min window's Chainlink open price.
+        start_price: the 5-min window's Chainlink open price.
         yes_price: current ask price for "Up" outcome.
         no_price: current ask price for "Down" outcome.
         k: sigmoid steepness (default 0.04).
@@ -377,7 +377,7 @@ def get_current_latency_signal(
     Returns:
         A ``LatencySignal`` with edge, ev, and odds_rate fields.
     """
-    model = _evaluate_model(chainlink_price, open_price, yes_price, no_price, k)
+    model = _evaluate_model(chainlink_price, start_price, yes_price, no_price, k)
 
     logger.debug(
         "CURRENT_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f odds_rate=%+.3f",
@@ -394,7 +394,7 @@ def get_current_latency_signal(
         chainlink_price=chainlink_price,
         binance_price=0.0,
         coinbase_price=0.0,
-        open_price=open_price,
+        start_price=start_price,
         odds_rate=model.odds_rate,
     )
 
@@ -403,7 +403,7 @@ def get_combined_latency_signal(
     binance_price: float,
     coinbase_price: float,
     chainlink_price: float,
-    open_price: float,
+    start_price: float,
     yes_price: float,
     no_price: float,
     k: float = 0.04,
@@ -411,7 +411,7 @@ def get_combined_latency_signal(
     """Get a combined latency signal analysis with both current and expected models."""
     current_model = _evaluate_model(
         target_price=chainlink_price,
-        open_price=open_price,
+        start_price=start_price,
         yes_price=yes_price,
         no_price=no_price,
         k=k,
@@ -420,14 +420,14 @@ def get_combined_latency_signal(
     avg_exchange = (binance_price + coinbase_price) / 2
     forward_model = _evaluate_model(
         target_price=avg_exchange,
-        open_price=open_price,
+        start_price=start_price,
         yes_price=yes_price,
         no_price=no_price,
         k=k,
     )
     
     return LatencyAnalysis(
-        open_price=open_price,
+        start_price=start_price,
         binance_price=binance_price,
         coinbase_price=coinbase_price,
         chainlink_price=chainlink_price,
