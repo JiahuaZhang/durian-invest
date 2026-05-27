@@ -15,7 +15,7 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Literal
@@ -82,7 +82,7 @@ class PredictState:
         self.trade: dict[str, Any] | None = None
         self.exit_decision: PredictExitDecision | None = None
 
-        self.need_log = cfg.use_proxy
+        self.save_log = cfg.use_proxy
         self.log_path = Path(__file__).resolve().parent.parent / "logs" / f"{self.slug}.jsonl"
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -152,11 +152,13 @@ class PredictState:
             case PredictStatus.STOPPED:
                 return
             case PredictStatus.READY:
-                pass
+                analysis = self._evaluate_signal(source)
+                self._check_entry_signal(analysis)
             case PredictStatus.HOLDING:
                 pass
             case PredictStatus.WATCHING:
-                pass
+                analysis = self._evaluate_signal(source)
+                self._log_signal(analysis)
             case _:
                 raise ValueError(f"Unknown predict status: {self.status!r}")
 
@@ -174,7 +176,7 @@ class PredictState:
             no_price=no_ask,
         )
 
-        if self.need_log:
+        if self.save_log:
             self._persist_snapshot(source, analysis)
 
         return analysis
@@ -198,25 +200,6 @@ class PredictState:
             self._order_task.cancel()
             self._order_task = None
 
-    def tick(self, source: str) -> None:
-        """
-        Evaluate state machine for this tick.
-        Called by manager on every price update or orderbook update.
-        """
-        if self.status not in (PredictStatus.READY, PredictStatus.HOLDING, PredictStatus.WATCHING):
-            return
-
-        analysis = self._evaluate_signal(source)
-        if analysis is None:
-            return
-
-        if self.status == PredictStatus.READY:
-            self._check_entry_signal(analysis)
-        elif self.status == PredictStatus.HOLDING:
-            self._check_exit_signal(analysis)
-        elif self.status == PredictStatus.WATCHING:
-            self._log_signal(analysis, source)
-
     def _check_entry_signal(self, analysis: LatencyAnalysis) -> None:
         """READY state: evaluate signal and transition to BUYING if criteria met."""
         forward = analysis.forward_model
@@ -234,10 +217,7 @@ class PredictState:
                 forward.odds_rate,
             )
             self.status = PredictStatus.BUYING
-            self._order_task = asyncio.create_task(
-                self._submit_buy_order(analysis),
-                name=f"buy-{self.slug}",
-            )
+            self._order_task = asyncio.create_task(self._submit_buy_order(analysis), name=f"buy-{self.slug}")
 
     def _check_exit_signal(self, analysis: LatencyAnalysis) -> None:
         """HOLDING state: check for stop-loss or take-profit."""

@@ -211,33 +211,12 @@ class LatencySignal:
     binance_price: float
     coinbase_price: float
     start_price: float
-    odds_rate: float       # 5-min market odds rate vs current price gap
+
 
     @property
     def side_label(self) -> str:
         return "YES" if self.side == "up" else "NO"
 
-
-def _compute_odds_rate(p_up: float, side: str, yes_price: float, no_price: float) -> float:
-    """Compute the 5-min market odds rate vs current price gap.
-
-    The odds rate compares the model's probability for the chosen side
-    against the market's implied probability (the ask price).
-    A positive value means the model sees better odds than the market offers.
-
-    Returns:
-        Ratio of modeled_prob / market_price - 1.  Positive = model favors entry.
-    """
-    if side == "up":
-        modeled_prob = p_up
-        market_prob = yes_price
-    else:
-        modeled_prob = 1.0 - p_up
-        market_prob = no_price
-
-    if market_prob <= 0:
-        return float("inf")
-    return modeled_prob / market_prob - 1.0
 
 
 @dataclass(frozen=True)
@@ -249,7 +228,7 @@ class LatencyModel:
     side_price: float      # current ask we'd buy at
     edge: float            # modeled_prob - side_price
     ev: float              # edge / side_price
-    odds_rate: float       # 5-min market odds rate vs current price gap
+
 
     @property
     def side_label(self) -> str:
@@ -293,7 +272,7 @@ def _evaluate_model(
         side_price = no_price
 
     ev = edge / side_price if side_price > 0 else float("inf")
-    odds_rate = _compute_odds_rate(p_up, side, yes_price, no_price)
+
 
     return LatencyModel(
         diff=diff,
@@ -302,7 +281,6 @@ def _evaluate_model(
         side_price=side_price,
         edge=edge,
         ev=ev,
-        odds_rate=odds_rate,
     )
 
 
@@ -336,8 +314,8 @@ def get_expected_latency_signal(
     model = _evaluate_model(avg_price, start_price, yes_price, no_price, k)
 
     logger.debug(
-        "EXPECTED_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f odds_rate=%+.3f",
-        model.side, model.diff, model.p_up, model.edge, model.ev, model.side_price, model.odds_rate,
+        "EXPECTED_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f",
+        model.side_label, model.diff, model.p_up, model.edge, model.ev, model.side_price,
     )
 
     return LatencySignal(
@@ -351,7 +329,6 @@ def get_expected_latency_signal(
         binance_price=binance_price,
         coinbase_price=coinbase_price,
         start_price=start_price,
-        odds_rate=model.odds_rate,
     )
 
 
@@ -378,13 +355,13 @@ def get_current_latency_signal(
         k: sigmoid steepness (default 0.04).
 
     Returns:
-        A ``LatencySignal`` with edge, ev, and odds_rate fields.
+        A ``LatencySignal`` with edge and ev fields.
     """
     model = _evaluate_model(chainlink_price, start_price, yes_price, no_price, k)
 
     logger.debug(
-        "CURRENT_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f odds_rate=%+.3f",
-        model.side, model.diff, model.p_up, model.edge, model.ev, model.side_price, model.odds_rate,
+        "CURRENT_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f",
+        model.side_label, model.diff, model.p_up, model.edge, model.ev, model.side_price,
     )
 
     return LatencySignal(
@@ -398,7 +375,6 @@ def get_current_latency_signal(
         binance_price=0.0,
         coinbase_price=0.0,
         start_price=start_price,
-        odds_rate=model.odds_rate,
     )
 
 

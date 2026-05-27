@@ -116,7 +116,7 @@ def test_get_expected_latency_signal():
     ]
 
     logger.info("=" * 125)
-    logger.info(f"{'Scenario':<30} | {'Diff':^10} | {'Side':^6} | {'Ask':^8} | {'Prob':^10} | {'Edge':^10} | {'EV / Odds':^12} | {'OddsRate':^10}")
+    logger.info(f"{'Scenario':<30} | {'Diff':^10} | {'Side':^6} | {'Ask':^8} | {'Prob':^10} | {'Edge':^10} | {'EV':^12}")
     logger.info("-" * 125)
     
     for s in scenarios:
@@ -137,8 +137,7 @@ def test_get_expected_latency_signal():
             f"{sig.side_price:^8.2f} | "
             f"{f'{prob * 100:.2f}%':^10} | "
             f"{f'{sig.edge * 100:+.2f}%':^10} | "
-            f"{f'{sig.ev * 100:+.2f}%':^12} | "
-            f"{f'{sig.odds_rate * 100:+.2f}%':^10}"
+            f"{f'{sig.ev * 100:+.2f}%':^12}"
         )
         
         # Verify correctness of logic
@@ -157,12 +156,6 @@ def test_get_expected_latency_signal():
         elif "Extreme Down" in s["name"]:
             assert sig.side == "down"
             assert sig.ev > 3.0  # (0.9820 - 0.20) / 0.20 = 3.91 (391%)
-
-        # Verify odds_rate consistency: positive odds_rate ↔ positive edge
-        if sig.edge > 0:
-            assert sig.odds_rate > 0, f"odds_rate should be positive when edge is positive: {sig.odds_rate}"
-        elif sig.edge < 0:
-            assert sig.odds_rate < 0, f"odds_rate should be negative when edge is negative: {sig.odds_rate}"
 
     logger.info("=" * 125)
 
@@ -224,7 +217,7 @@ def test_get_current_latency_signal():
     ]
 
     logger.info("=" * 125)
-    logger.info(f"{'Scenario':<35} | {'Diff':^10} | {'Side':^6} | {'Ask':^8} | {'Prob':^10} | {'Edge':^10} | {'EV':^12} | {'OddsRate':^10}")
+    logger.info(f"{'Scenario':<35} | {'Diff':^10} | {'Side':^6} | {'Ask':^8} | {'Prob':^10} | {'Edge':^10} | {'EV':^12}")
     logger.info("-" * 125)
 
     for s in scenarios:
@@ -244,8 +237,7 @@ def test_get_current_latency_signal():
             f"{sig.side_price:^8.2f} | "
             f"{f'{prob * 100:.2f}%':^10} | "
             f"{f'{sig.edge * 100:+.2f}%':^10} | "
-            f"{f'{sig.ev * 100:+.2f}%':^12} | "
-            f"{f'{sig.odds_rate * 100:+.2f}%':^10}"
+            f"{f'{sig.ev * 100:+.2f}%':^12}"
         )
 
         # Verify chainlink_price is stored
@@ -268,19 +260,13 @@ def test_get_current_latency_signal():
             assert sig.side == "down"
             assert sig.p_up < 0.5
 
-        # Verify odds_rate sign matches edge sign
-        if sig.edge > 0:
-            assert sig.odds_rate > 0
-        elif sig.edge < 0:
-            assert sig.odds_rate < 0
-
     logger.info("=" * 125)
 
 
 def test_current_vs_expected_consistency():
     """
     When chainlink_price equals the exchange average, both signals should
-    produce identical results (same diff, p_up, edge, ev, odds_rate).
+    produce identical results (same diff, p_up, edge, ev).
     """
     start_price = 70000.0
     price = 70030.0  # same for all sources
@@ -308,43 +294,12 @@ def test_current_vs_expected_consistency():
     assert expected.side == current.side
     assert abs(expected.edge - current.edge) < 1e-9
     assert abs(expected.ev - current.ev) < 1e-9
-    assert abs(expected.odds_rate - current.odds_rate) < 1e-9
+
 
     logger.info(
         "Consistency check passed: expected and current signals match when prices are equal"
     )
 
-
-def test_odds_rate_computation():
-    """
-    Verify odds_rate = modeled_prob / market_ask - 1 for both sides.
-    """
-    # Up-leaning scenario: model says 73% up, market asks 0.60
-    sig = get_current_latency_signal(
-        chainlink_price=70025.0,
-        start_price=70000.0,
-        yes_price=0.60,
-        no_price=0.45,
-    )
-    assert sig.side == "up"
-    expected_odds_rate = sig.p_up / 0.60 - 1.0
-    assert abs(sig.odds_rate - expected_odds_rate) < 1e-9, \
-        f"odds_rate mismatch: {sig.odds_rate} != {expected_odds_rate}"
-
-    # Down-leaning scenario
-    sig_down = get_current_latency_signal(
-        chainlink_price=69975.0,
-        start_price=70000.0,
-        yes_price=0.45,
-        no_price=0.60,
-    )
-    assert sig_down.side == "down"
-    p_down = 1.0 - sig_down.p_up
-    expected_odds_rate_down = p_down / 0.60 - 1.0
-    assert abs(sig_down.odds_rate - expected_odds_rate_down) < 1e-9, \
-        f"odds_rate mismatch: {sig_down.odds_rate} != {expected_odds_rate_down}"
-
-    logger.info("odds_rate computation tests passed")
 
 
 def test_get_combined_latency_signal():
