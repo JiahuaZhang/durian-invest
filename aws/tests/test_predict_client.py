@@ -34,7 +34,14 @@ def _select_expensive_outcome(market: dict) -> tuple[dict, Decimal | None]:
     selected_quote: Decimal | None = None
     for outcome in outcomes:
         best_ask = outcome.get("bestAsk")
-        quote = _decimal_or_none(best_ask.get("price")) if best_ask else None
+        best_bid = outcome.get("bestBid")
+        
+        ask_quote = _decimal_or_none(best_ask.get("price")) if best_ask else None
+        bid_quote = _decimal_or_none(best_bid.get("price")) if best_bid else None
+        
+        quotes = [q for q in (ask_quote, bid_quote) if q is not None]
+        quote = max(quotes) if quotes else None
+        
         if quote is not None and (selected_quote is None or quote > selected_quote):
             selected = outcome
             selected_quote = quote
@@ -97,7 +104,7 @@ async def _test_predict_smart_minimum_order():
     outcome, quote = _select_expensive_outcome(market)
     outcome_name = outcome.get("name", "Up")
     logger.info("selected expensive outcome=%s quote=%s payload:\n%s", outcome_name, quote, _pretty_json(outcome))
-    if quote is not None and quote <= price:
+    if quote is not None and quote <= price and quote <= 0.5:
         logger.warning(
             "Selected outcome quote %s is at or below bid price %s; skipping create to avoid execution.",
             quote,

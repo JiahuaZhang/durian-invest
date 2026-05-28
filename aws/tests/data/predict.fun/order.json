@@ -1,0 +1,31 @@
+{
+    "data": {
+        "amount": "90000000000000000000",
+        "amountFilled": "0",
+        "currency": "USDT",
+        "id": "259006761",
+        "isNegRisk": false,
+        "isYieldBearing": false,
+        "marketId": 398310,
+        "order": {
+            "expiration": 1779973561,
+            "feeRateBps": "200",
+            "hash": "0xf518a872423535902478cf22fe45086237d7fe270cf8eff62ef62ea17fe2c234",
+            "maker": "0x39eD2541Fa8CB911AFd3D5889236cF7a38c87BC6",
+            "makerAmount": "900000000000000000",
+            "nonce": "0",
+            "salt": "2108555069",
+            "side": 0,
+            "signature": "0xa3dcab70f02139a89eb23fe4b866707044960fa4f8c2f2f4420e50cd41b9c479482ce9fa7cfa01a09bbcd19d1f79122b43dc8ba6aede4d60a94950bd04e3e0231b",
+            "signatureType": 0,
+            "signer": "0x39eD2541Fa8CB911AFd3D5889236cF7a38c87BC6",
+            "taker": "0x0000000000000000000000000000000000000000",
+            "takerAmount": "90000000000000000000",
+            "tokenId": "96882824638546554829980481878544717283965069942455196244942895658487684514449"
+        },
+        "rewardEarningRate": 0,
+        "status": "OPEN",
+        "strategy": "LIMIT"
+    },
+    "success": true
+}
