@@ -1,0 +1,8 @@
+{
+    "success": false,
+    "code": 403,
+    "error": "forbidden",
+    "message": "This operation is not available in your jurisdiction",
+    "timestamp": "2026-05-24T22:13:13.84603459Z",
+    "trace": "a9e00d4c559740d0d036b4fd5838764f"
+}
