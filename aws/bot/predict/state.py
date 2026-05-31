@@ -82,6 +82,8 @@ class PredictState:
         self.market = market
 
         self.start_price = market.get("variantData").get("startPrice")
+        if self.start_price is None:
+            raise ValueError("start_price not found")
         self.status = PredictStatus.INIT
         self.trades: list[Trade] = []
         self._order_task: asyncio.Task | None = None
@@ -588,6 +590,48 @@ class PredictState:
         )
         self.status = recovering_to
 
+    def resolve(self, market_data: dict[str, Any]) -> None:
+        """Handle market resolution. Settle any active trade and stop.
+
+        Resolution data contains ``resolution.name`` = ``"Up"`` or ``"Down"``.
+        If the bot holds a position:
+        - Resolution aligns with held side → shares worth $1 each.
+        - Resolution opposes held side → shares worth $0.
+        """
+        resolution = market_data.get("resolution", {})
+        resolved_name = resolution.get("name", "")  # "Up" or "Down"
+        resolved_side = "up" if resolved_name == "Up" else "down"
+
+        self.stop_orders()
+
+        trade = self.active_trade
+        if trade:
+            if resolved_side == trade.side:
+                trade.exit_price = 1.0
+            else:
+                trade.exit_price = 0.0
+            trade.pnl = trade.exit_price - trade.entry_price
+
+            logger.info(
+                "MARKET RESOLVED | slug=%s resolution=%s held=%s "
+                "entry=%.3f exit=%.3f pnl=%+.4f amount=%d",
+                self.slug,
+                resolved_name,
+                trade.side,
+                trade.entry_price,
+                trade.exit_price,
+                trade.pnl,
+                trade.amount,
+            )
+        else:
+            logger.info(
+                "MARKET RESOLVED | slug=%s resolution=%s (no active position)",
+                self.slug,
+                resolved_name,
+            )
+
+        self.status = PredictStatus.STOPPED
+
     def render(self, level: int = 10) -> None:
         binance_gap = self.binance_price - self.chainlink_price
         coinbase_gap = self.coinbase_price - self.chainlink_price
@@ -607,7 +651,3 @@ class PredictState:
         imbalance_ratio = self.orderbook.get_imbalance(level)
         logger.info(f"Imbalance Ratio: {imbalance_ratio:.2f}")
         logger.info("=" * 50)
-
-    def resolve(self, market_data: dict[str, Any]) -> None:
-        result = market_data.get("resolution").get('name') # Up / Down
-        # todo
