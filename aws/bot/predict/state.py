@@ -42,27 +42,26 @@ class PredictStatus(Enum):
     WATCHING = "watching"
     STOPPED = "stopped"
 
-@dataclass(frozen=True)
-class PredictExitDecision:
-    reason: str
-    side: str
-    token_index: int
-    price: float
-    entry_price: float
-    pnl_per_share: float
+@dataclass
+class OrderRecord:
+    """Timestamps and identifiers for one leg of a trade."""
+    signal: LatencyAnalysis
+    start: float                   # time.time() when order submitted
+    filled: float | None = None    # time.time() when fill confirmed
+    order_hash: str | None = None
+    order_id: str | None = None
 
 
 @dataclass
 class Trade:
-    """A single buy trade record for auditing."""
-    signal: LatencyAnalysis      # the analysis snapshot that triggered entry
-    start: float                 # time.time() when buy order was submitted
-    filled: float | None = None  # time.time() when fill was confirmed
-    order_hash: str | None = None
-    order_id: str | None = None
-    outcome_name: str = ""
-    side: str = ""               # "up" or "down"
-    price: float = 0.0           # entry price
+    """Full lifecycle of a single position: entry + optional exit."""
+    side: str                      # "up" or "down"
+    outcome_name: str              # "Up" or "Down"
+    entry_price: float             # price paid per share at entry
+    enter: OrderRecord
+    exit: OrderRecord | None = None
+    exit_price: float | None = None  # price received per share at exit
+    pnl: float | None = None        # exit_price - entry_price (per share)
 
 
 # Fill-check delays: check immediately, then after 2s, then after 4s.
@@ -95,8 +94,6 @@ class PredictState:
             "coinbase": 0.0,
             "chainlink": 0.0,
         }
-
-        self.exit_decision: PredictExitDecision | None = None
 
         self.save_log = cfg.use_proxy
         self.log_path = Path(__file__).resolve().parent.parent / "logs" / f"{self.slug}.jsonl"
@@ -171,7 +168,8 @@ class PredictState:
                 analysis = self._evaluate_signal(source)
                 self._check_entry_signal(analysis)
             case PredictStatus.HOLDING:
-                pass
+                analysis = self._evaluate_signal(source)
+                self._check_exit_signal(analysis)
             case PredictStatus.WATCHING:
                 analysis = self._evaluate_signal(source)
                 self._log_signal(analysis)
@@ -236,33 +234,54 @@ class PredictState:
             self._order_task = asyncio.create_task(self._submit_buy_order(analysis), name=f"buy-{self.slug}")
 
     def _check_exit_signal(self, analysis: LatencyAnalysis) -> None:
-        """HOLDING state: check for stop-loss or take-profit."""
-        exit_decision = self.check_exit()
-        if exit_decision is not None:
-            logger.info(
-                "EXIT SIGNAL | slug=%s reason=%s price=%.3f "
-                "entry=%.3f pnl_per_share=%+.4f",
-                self.slug,
-                exit_decision.reason,
-                exit_decision.price,
-                exit_decision.entry_price,
-                exit_decision.pnl_per_share,
-            )
-            self.mark_exit(exit_decision)
-            self.status = PredictStatus.SELLING
-            self._order_task = asyncio.create_task(
-                self._submit_sell_order(exit_decision),
-                name=f"sell-{self.slug}",
-            )
+        """HOLDING state: model-driven take-profit / stop-loss.
 
-    def _log_signal(self, analysis: LatencyAnalysis, source: str) -> None:
+        Sell when the forward model predicts AGAINST the held position
+        with sufficient conviction (ev >= exit threshold).
+        """
+        trade = self.active_trade
+        if not trade:
+            raise RuntimeError("No active trade found in state")
+
+        forward = analysis.forward_model
+        model_disagrees = (forward.side != trade.side)
+        exit_ev_threshold = 0.03
+
+        # Current bid for P&L logging
+        prices = self.orderbook.get_price()
+        side_prices = prices["yes"] if trade.side == "up" else prices["no"]
+        current_bid = side_prices["bid"] or trade.entry_price
+        unrealized_pnl = current_bid - trade.entry_price
+
+        if not (model_disagrees and forward.ev >= exit_ev_threshold):
+            return
+
+        reason = "take-profit" if unrealized_pnl > 0 else "stop-loss"
+        logger.info(
+            "EXIT SIGNAL | slug=%s reason=%s held=%s model=%s model_ev=%+.3f "
+            "unrealized_pnl=%+.4f entry=%.3f current_bid=%.3f",
+            self.slug,
+            reason,
+            trade.side,
+            forward.side,
+            forward.ev,
+            unrealized_pnl,
+            trade.entry_price,
+            current_bid,
+        )
+        self.status = PredictStatus.SELLING
+        self._order_task = asyncio.create_task(
+            self._submit_sell_order(analysis, current_bid),
+            name=f"sell-{self.slug}",
+        )
+
+    def _log_signal(self, analysis: LatencyAnalysis) -> None:
         """WATCHING state: compute and log signal without acting."""
         fwd = analysis.forward_model
         cur = analysis.current_model
         logger.info(
-            "WATCH %s | slug=%s fwd_side=%s fwd_ev=%+.3f fwd_edge=%+.4f "
+            "WATCH | slug=%s fwd_side=%s fwd_ev=%+.3f fwd_edge=%+.4f "
             "cur_side=%s cur_ev=%+.3f cur_edge=%+.4f",
-            source,
             self.slug,
             fwd.side_label, fwd.ev, fwd.edge,
             cur.side_label, cur.ev, cur.edge,
@@ -272,8 +291,8 @@ class PredictState:
 
     @property
     def active_trade(self) -> Trade | None:
-        """Return the last trade if it has been filled (i.e. we are holding)."""
-        if self.trades and self.trades[-1].filled is not None:
+        """Return the last trade if its entry has been filled (i.e. we are holding)."""
+        if self.trades and self.trades[-1].enter.filled is not None and self.trades[-1].exit is None:
             return self.trades[-1]
         return None
 
@@ -291,12 +310,15 @@ class PredictState:
         outcome_name = "Up" if forward.side == "up" else "Down"
         price = forward.side_price
 
-        trade = Trade(
+        enter_record = OrderRecord(
             signal=analysis,
             start=time.time(),
-            outcome_name=outcome_name,
+        )
+        trade = Trade(
             side=forward.side,
-            price=price,
+            outcome_name=outcome_name,
+            entry_price=price,
+            enter=enter_record,
         )
         self.trades.append(trade)
 
@@ -322,8 +344,8 @@ class PredictState:
         data = result.get("data", {})
         order_hash = data.get("orderHash")
         order_id = data.get("orderId")
-        trade.order_hash = order_hash
-        trade.order_id = str(order_id) if order_id else None
+        enter_record.order_hash = order_hash
+        enter_record.order_id = str(order_id) if order_id else None
 
         if not order_hash:
             logger.error("Order created but no orderHash in response — back to READY")
@@ -358,13 +380,13 @@ class PredictState:
             )
 
             if status == "FILLED":
-                trade.filled = time.time()
+                enter_record.filled = time.time()
                 self.status = PredictStatus.HOLDING
                 logger.info(
                     "BUY FILLED | slug=%s outcome=%s price=%.3f "
                     "fill_time=%.2fs hash=%s",
                     self.slug, outcome_name, price,
-                    trade.filled - trade.start, order_hash,
+                    enter_record.filled - enter_record.start, order_hash,
                 )
                 return
 
@@ -383,8 +405,8 @@ class PredictState:
             len(_FILL_CHECK_DELAYS), self.slug, order_hash,
         )
         try:
-            if trade.order_id:
-                await self.client.cancel_orders([trade.order_id])
+            if enter_record.order_id:
+                await self.client.cancel_orders([enter_record.order_id])
         except Exception as exc:
             self._on_order_error(exc, recovering_to=PredictStatus.READY)
             return
@@ -393,48 +415,130 @@ class PredictState:
 
     async def _submit_sell_order(
         self,
-        exit_decision: PredictExitDecision,
+        analysis: LatencyAnalysis,
+        sell_price: float,
     ) -> None:
-        """Submit a sell order asynchronously. Transitions state on result."""
+        """Place a sell order via smart_minimum_order, then poll for fill.
+
+        Flow:
+        1. Place order. Non-recoverable error → STOPPED + SystemExit.
+           Recoverable error → back to HOLDING.
+        2. Check fill status with exponential backoff (0s, 2s, 4s).
+           FILLED → compute pnl, transition to READY.
+           Still OPEN after all retries → cancel, back to HOLDING.
+        """
         trade = self.active_trade
         if not trade:
             logger.error("Cannot sell: no active trade in state")
-            self.status = PredictStatus.READY
+            self.status = PredictStatus.HOLDING
             return
 
-        outcome_name = "Up" if trade.side == "up" else "Down"
-        price = exit_decision.price
+        exit_record = OrderRecord(
+            signal=analysis,
+            start=time.time(),
+        )
+        trade.exit = exit_record
 
-        # TODO: rewrite sell flow with smart_minimum_order + fill checking
+        # ── Step 1: place the sell order ──────────────────────────
         try:
-            result = await self.client.place_limit_order(
+            result = await self.client.smart_minimum_order(
                 market=self.market,
-                outcome_name=outcome_name,
+                outcome_name=trade.outcome_name,
+                price=sell_price,
                 side="SELL",
-                price=price,
-                size=1,  # TODO: derive from filled trade amount
+                is_post_only=False,
+                return_full_response=True,
             )
+        except Exception as exc:
+            trade.exit = None  # roll back
+            self._on_order_error(exc, recovering_to=PredictStatus.HOLDING)
+            return
 
-            if result is None:
-                logger.warning("Sell order returned None — treating as recoverable")
+        if result is None:
+            logger.warning("Sell order returned None — treating as recoverable")
+            trade.exit = None
+            self.status = PredictStatus.HOLDING
+            return
+
+        data = result.get("data", {})
+        order_hash = data.get("orderHash")
+        order_id = data.get("orderId")
+        exit_record.order_hash = order_hash
+        exit_record.order_id = str(order_id) if order_id else None
+
+        if not order_hash:
+            logger.error("Sell order created but no orderHash — back to HOLDING")
+            trade.exit = None
+            self.status = PredictStatus.HOLDING
+            return
+
+        logger.info(
+            "SELL ORDER PLACED | slug=%s outcome=%s price=%.3f hash=%s",
+            self.slug, trade.outcome_name, sell_price, order_hash,
+        )
+
+        # ── Step 2: poll for fill with backoff (0s, 2s, 4s) ─────
+        for delay in _FILL_CHECK_DELAYS:
+            if delay > 0:
+                await asyncio.sleep(delay)
+
+            try:
+                order_data = await self.client.get_order_by_hash(order_hash, return_full_response=False)
+            except Exception as exc:
+                trade.exit = None
+                self._on_order_error(exc, recovering_to=PredictStatus.HOLDING)
+                return
+
+            if order_data is None:
+                logger.warning("get_order_by_hash returned None — treating as recoverable")
+                trade.exit = None
                 self.status = PredictStatus.HOLDING
                 return
 
+            status = order_data.get("status", "")
             logger.info(
-                "SELL FILLED | slug=%s outcome=%s exit=%.3f entry=%.3f "
-                "pnl_per_share=%+.4f reason=%s",
-                self.slug,
-                outcome_name,
-                price,
-                exit_decision.entry_price,
-                exit_decision.pnl_per_share,
-                exit_decision.reason,
+                "SELL CHECK | slug=%s hash=%s status=%s delay=%ds",
+                self.slug, order_hash, status, delay,
             )
 
-            self.status = PredictStatus.READY
+            if status == "FILLED":
+                exit_record.filled = time.time()
+                trade.exit_price = sell_price
+                trade.pnl = sell_price - trade.entry_price
+                self.status = PredictStatus.READY
+                logger.info(
+                    "SELL FILLED | slug=%s outcome=%s exit=%.3f entry=%.3f "
+                    "pnl=%+.4f fill_time=%.2fs hash=%s",
+                    self.slug, trade.outcome_name, sell_price,
+                    trade.entry_price, trade.pnl,
+                    exit_record.filled - exit_record.start, order_hash,
+                )
+                return
 
+            if status != "OPEN":
+                logger.warning(
+                    "Sell order ended with status=%s before fill — back to HOLDING",
+                    status,
+                )
+                trade.exit = None
+                self.status = PredictStatus.HOLDING
+                return
+
+        # ── Step 3: still OPEN after all retries → cancel ────────
+        logger.warning(
+            "Sell order still OPEN after %d checks — cancelling | slug=%s hash=%s",
+            len(_FILL_CHECK_DELAYS), self.slug, order_hash,
+        )
+        try:
+            if exit_record.order_id:
+                await self.client.cancel_orders([exit_record.order_id])
         except Exception as exc:
+            trade.exit = None
             self._on_order_error(exc, recovering_to=PredictStatus.HOLDING)
+            return
+
+        trade.exit = None
+        self.status = PredictStatus.HOLDING
 
     def _on_order_error(
         self,
@@ -492,40 +596,6 @@ class PredictState:
         imbalance_ratio = self.orderbook.get_imbalance(level)
         logger.info(f"Imbalance Ratio: {imbalance_ratio:.2f}")
         logger.info("=" * 50)
-
-    def check_exit(self) -> PredictExitDecision | None:
-        trade = self.active_trade
-        if not trade or self.exit_decision or self.resolved:
-            return None
-
-        prices = self.orderbook.get_price()
-        side = trade.side
-        side_prices = prices["yes"] if side == "up" else prices["no"]
-        current_bid = side_prices["bid"] or trade.price
-        entry = trade.price
-
-        reason = None
-        if current_bid >= self.cfg.exit.take_profit:
-            reason = "Take Profit"
-        elif current_bid <= self.cfg.exit.stop_loss:
-            reason = "Stop Loss"
-
-        if reason is None:
-            return None
-
-        token_index = 0 if side == "up" else 1
-
-        return PredictExitDecision(
-            reason=reason,
-            side=side,
-            token_index=token_index,
-            price=current_bid,
-            entry_price=entry,
-            pnl_per_share=current_bid - entry,
-        )
-
-    def mark_exit(self, decision: PredictExitDecision) -> None:
-        self.exit_decision = decision
 
     def resolve(self, market_data: dict[str, Any]) -> None:
         result = market_data.get("resolution").get('name') # Up / Down
