@@ -1,41 +1,41 @@
 import pytest
 import logging
+import time
 from bot.config import BotConfig
-from bot.predict.state import PredictMarket, PredictState
+from bot.predict.state import PredictState, Trade, OrderRecord
+from bot.predict.client import PredictClient
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-def test_predict_state_integration():
+@pytest.mark.asyncio
+async def test_predict_state_integration():
     cfg = BotConfig()
+    client = PredictClient(cfg)
 
     raw_market = {
         "id": 347806,
-        "slug": "btc-updown-5m-1778974500",
-        "conditionId": "0x123",
+        "categorySlug": "btc-updown-5m-1778974500",
         "title": "Bitcoin Up or Down - May 16, 7:35PM-7:40PM ET",
-        "question": "Bitcoin Up or Down - May 16, 7:35PM-7:40PM ET",
-        "isNegRisk": False,
-        "feeRateBps": 200,
         "outcomes": [
-            {"side": "yes", "tokenId": "yes_token_123"},
-            {"side": "no", "tokenId": "no_token_123"}
+            {"name": "Up", "onChainId": "10654249"},
+            {"name": "Down", "onChainId": "63799261"}
         ],
         "variantData": {
             "priceFeedProvider": "CHAINLINK",
             "startPrice": 75000.0,
-            "endPrice": None
         }
     }
 
-    market = PredictMarket.from_api(raw_market)
-    assert market is not None
-    assert market.id == 347806
+    state = PredictState(cfg, client, raw_market)
+    assert state.market_id == 347806
 
-    state = PredictState(cfg, market)
-    
     # 1. Seed prices
-    state.seed_prices(binance=75100.0, coinbase=75090.0, chainlink=75000.0)
-    assert state.prices_ready is True
+    state.update("binance", 75100.0)
+    state.update("coinbase", 75090.0)
+    state.update("chainlink", 75000.0)
+    assert state.binance_price == 75100.0
+    assert state.coinbase_price == 75090.0
+    assert state.chainlink_price == 75000.0
 
     # 2. Apply orderbook payload
     msg = {
@@ -48,51 +48,39 @@ def test_predict_state_integration():
         }
     }
     
-    changed = state.apply_message(msg)
-    assert changed is True
+    state.update("orderbook", msg)
     assert state.orderbook.best_bid == 7700
     assert state.orderbook.best_ask == 8000
     
-    # 3. Simulate a manual chainlink update (bypassing WS)
-    state.update_price("chainlink", 75050.0)
+    # 3. Simulate a manual chainlink update
+    state.update("chainlink", 75050.0)
     assert state.chainlink_price == 75050.0
-
-    print("\n--- STATE RENDER ---")
-    state.render(level=3)
 
 def test_predict_state_resolve():
     cfg = BotConfig()
+    client = PredictClient(cfg)
     
     # Mock entry trade
     raw_market = {
         "id": 348531,
-        "slug": "btc-updown-5m-1778979300",
+        "categorySlug": "btc-updown-5m-1778979300",
         "outcomes": [
             {"name": "Up", "onChainId": "10654249"},
             {"name": "Down", "onChainId": "63799261"}
-        ]
+        ],
+        "variantData": {
+            "startPrice": 70000.0,
+        }
     }
-    market = PredictMarket.from_api(raw_market)
-    state = PredictState(cfg, market)
+    state = PredictState(cfg, client, raw_market)
     
-    from bot.signals.divergence import TradeSignal
-    sig = TradeSignal(
-        side="down", # token_index=1 -> "Down" -> onChainId 63799261
-        source="binance",
+    trade = Trade(
+        outcome="Down",
         entry_price=0.20,
-        bid_price=0.20,
-        ask_price=0.22,
-        open_price=70000.0,
-        binance_price=70000.0,
-        coinbase_price=70000.0,
-        chainlink_price=70000.0,
-        binance_gap=0.0,
-        coinbase_gap=0.0,
-        divergence=0.05,
-        imbalance=0.1,
-        imbalance_ratio=1.5
+        enter=OrderRecord(signal=None, start=time.time(), filled=time.time()),
+        amount=100
     )
-    state.mark_trade(sig)
+    state.trades.append(trade)
     
     # Resolution payload
     resolved_payload = {
@@ -105,10 +93,8 @@ def test_predict_state_resolve():
         }
     }
     
-    res = state.resolve(resolved_payload)
-    assert res.won is True
-    assert res.winning_token_id == "63799261"
-    assert res.exit_price == 1.0
-    assert res.pnl_per_share == 0.8  # 1.0 - 0.20
-
+    state.resolve(resolved_payload)
+    
+    assert trade.exit_price == 1.0
+    assert trade.pnl == 0.8  # 1.0 - 0.20
 # $env:PYTHONPATH="."; uv run pytest tests/test_predict_state.py -s -v

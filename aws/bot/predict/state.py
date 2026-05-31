@@ -75,14 +75,18 @@ class PredictState:
         cfg: BotConfig,
         client: PredictClient,
         market: dict[str, Any],
+        stop_event: asyncio.Event | None = None,
     ):
         self.cfg = cfg
         self.client = client
         self.market = market
+        self.stop_event = stop_event
 
         self.start_price = market.get("variantData").get("startPrice")
         if self.start_price is None:
-            raise ValueError("start_price not found")
+            logger.error(f"start_price not found for market {market.get('id')}")
+            self.stop_event.set()
+            return
         self.status = PredictStatus.INIT
         self.trades: list[Trade] = []
         self._order_task: asyncio.Task | None = None
@@ -231,13 +235,12 @@ class PredictState:
         if forward.ev >= ev_threshold:
             logger.info(
                 "ENTRY SIGNAL | slug=%s side=%s ev=%+.3f edge=%+.4f "
-                "diff=$%+.2f odds_rate=%+.3f",
+                "diff=$%+.2f",
                 self.slug,
                 forward.side,
                 forward.ev,
                 forward.edge,
                 forward.diff,
-                forward.odds_rate,
             )
             self.status = PredictStatus.BUYING
             self._order_task = asyncio.create_task(self._submit_buy_order(analysis), name=f"buy-{self.slug}")
@@ -579,7 +582,9 @@ class PredictState:
                 )
                 self.status = PredictStatus.STOPPED
                 self.stop_orders()
-                raise SystemExit(f"Non-recoverable order error: {status} {exc.response.text[:200]}")
+                if self.stop_event:
+                    self.stop_event.set()
+                return
 
         logger.warning(
             "RECOVERABLE ORDER ERROR: %s — reverting to %s",
