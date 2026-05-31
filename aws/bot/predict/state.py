@@ -59,6 +59,7 @@ class Trade:
     outcome_name: str              # "Up" or "Down"
     entry_price: float             # price paid per share at entry
     enter: OrderRecord
+    amount: int = 0                # shares held (whole units, converted from wei)
     exit: OrderRecord | None = None
     exit_price: float | None = None  # price received per share at exit
     pnl: float | None = None        # exit_price - entry_price (per share)
@@ -381,11 +382,14 @@ class PredictState:
 
             if status == "FILLED":
                 enter_record.filled = time.time()
+                # Extract filled amount (wei → shares)
+                amount_filled_wei = int(order_data.get("amountFilled", order_data.get("amount", "0")))
+                trade.amount = amount_filled_wei // (10**18)
                 self.status = PredictStatus.HOLDING
                 logger.info(
-                    "BUY FILLED | slug=%s outcome=%s price=%.3f "
+                    "BUY FILLED | slug=%s outcome=%s price=%.3f amount=%d "
                     "fill_time=%.2fs hash=%s",
-                    self.slug, outcome_name, price,
+                    self.slug, outcome_name, price, trade.amount,
                     enter_record.filled - enter_record.start, order_hash,
                 )
                 return
@@ -439,15 +443,22 @@ class PredictState:
         )
         trade.exit = exit_record
 
-        # ── Step 1: place the sell order ──────────────────────────
+        # ── Step 1: place the sell order (exact amount held) ──────
+        logger.info(
+            "SELL ORDER | slug=%s outcome=%s price=%.3f amount=%d",
+            self.slug, trade.outcome_name, sell_price, trade.amount,
+        )
+        expiration_ts = int(time.time()) + 130
         try:
-            result = await self.client.smart_minimum_order(
+            result = await self.client.place_limit_order(
                 market=self.market,
                 outcome_name=trade.outcome_name,
-                price=sell_price,
                 side="SELL",
+                price=sell_price,
+                size=trade.amount,
                 is_post_only=False,
                 return_full_response=True,
+                expiration=expiration_ts,
             )
         except Exception as exc:
             trade.exit = None  # roll back
