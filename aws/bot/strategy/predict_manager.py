@@ -78,10 +78,13 @@ class PredictManager:
             product=cfg.feeds.coinbase_product,
             on_update=self._on_price_update,
         )
+        self.stop_event = asyncio.Event()
+
         self.chainlink = ChainlinkFeed(
             feed_id=cfg.feeds.chainlink_feed_id,
             poll_seconds=cfg.feeds.chainlink_poll_seconds,
             on_update=self._on_price_update,
+            stop_event=self.stop_event,
         )
 
         # ── Market tracking ──
@@ -95,8 +98,6 @@ class PredictManager:
         self.log_path = Path(log_path)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         
-        self.stop_event = asyncio.Event()
-
     # ── Lifecycle ──────────────────────────────────────────────────
 
     async def run(self) -> None:
@@ -252,7 +253,8 @@ class PredictManager:
 
     def _on_price_update(self, source: str, price: float) -> None:
         """Feed callback — always updates state, then lets state process the tick."""
-        self.current_state.update(source, price)
+        if self.current_state is not None:
+            self.current_state.update(source, price)
 
     # ── Market WS handling ────────────────────────────────────────
 

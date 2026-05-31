@@ -13,8 +13,6 @@ import logging
 import time
 from typing import Callable
 
-import httpx
-
 logger = logging.getLogger(__name__)
 
 CHAINLINK_API = "https://data.chain.link/api/live-data-engine-stream-data"
@@ -30,11 +28,13 @@ class ChainlinkFeed:
         self,
         feed_id: str = BTC_USD_FEED_ID,
         poll_seconds: int = 1,
-        on_update: Callable[[str, float], None] | None = None
+        on_update: Callable[[str, float], None] | None = None,
+        stop_event: asyncio.Event | None = None
     ):
         self.feed_id = feed_id
         self.poll_seconds = poll_seconds
         self.on_update = on_update
+        self.stop_event = stop_event
         self.price: float = 0.0
         self.last_update: float = 0.0
         self._running = False
@@ -44,41 +44,87 @@ class ChainlinkFeed:
         return time.monotonic() - self.last_update > 30 if self.last_update else True
 
     async def connect(self):
-        """Poll Chainlink price continuously."""
+        """Poll Chainlink price continuously using DrissionPage to bypass Vercel 429s."""
         self._running = True
         logger.info(f"Chainlink feed starting: feed_id={self.feed_id[:16]}... poll={self.poll_seconds}s")
 
-        async with httpx.AsyncClient(timeout=10) as client:
-            while self._running:
-                try:
-                    price = await self._fetch_price(client)
-                    if price and price > 0:
-                        self.price = price
-                        self.last_update = time.monotonic()
-                        if self.on_update:
-                            self.on_update("chainlink", self.price)
-                except Exception as e:
-                    logger.warning(f"Chainlink fetch error: {e}")
+        # DrissionPage is synchronous, so we run initialization in a thread
+        from DrissionPage import ChromiumPage, ChromiumOptions
+
+        def _init_browser():
+            co = ChromiumOptions()
+            co.headless(True)
+            co.set_argument('--disable-blink-features=AutomationControlled')
+            co.set_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
+            # Mute audio to avoid any hidden media autoplay errors
+            co.mute(True)
+            
+            p = ChromiumPage(co)
+            logger.info("DrissionPage: Navigating to Chainlink to bypass Cloudflare...")
+            p.get("https://data.chain.link/streams/btc-usd-cexprice-streams")
+            
+            # Wait for Vercel Security Checkpoint to pass
+            p.wait.title_change('Just a moment...', timeout=15)
+            logger.info(f"DrissionPage: Cloudflare bypassed. Title: {p.title}")
+            return p
+
+        try:
+            page = await asyncio.to_thread(_init_browser)
+        except Exception as e:
+            logger.error(f"Failed to initialize DrissionPage: {e}")
+            if self.stop_event:
+                self.stop_event.set()
+            return
+
+        url = f"{CHAINLINK_API}?feedId={self.feed_id}&abiIndex=0&queryWindow=1m&attributeName=bid"
+
+        def _fetch():
+            res = page.run_js(f'''
+                return fetch('{url}').then(r => {{
+                    if (!r.ok) return {{error: r.status}};
+                    return r.json();
+                }}).catch(e => ({{error: e.toString()}}));
+            ''')
+            if 'error' in res:
+                return None, res['error']
+            try:
+                nodes = res.get('data', {}).get('allStreamValuesGenerics', {}).get('nodes', [])
+                if nodes:
+                    return float(nodes[0]['valueNumeric']), None
+            except Exception as e:
+                return None, str(e)
+            return None, "No nodes returned"
+
+        while self._running:
+            try:
+                price, err = await asyncio.to_thread(_fetch)
+                
+                if price is not None:
+                    self.price = price
+                    self.last_update = time.time()
+                    if self.on_update:
+                        self.on_update("chainlink", self.price)
+                else:
+                    if err == 429:
+                        logger.error("Chainlink feed got 429 Too Many Requests even with DrissionPage. Stopping bot to avoid IP ban.")
+                        if self.stop_event:
+                            self.stop_event.set()
+                        break
+                    else:
+                        logger.warning(f"Chainlink fetch error: {err}")
+                        
+            except Exception as e:
+                logger.error(f"Chainlink feed error: {e}")
+                
+            if self._running:
                 await asyncio.sleep(self.poll_seconds)
-
-    async def _fetch_price(self, client: httpx.AsyncClient) -> float | None:
-        """Fetch latest BTC/USD bid price from Chainlink Data Streams."""
-        params = {
-            "feedId": self.feed_id,
-            "abiIndex": 0,
-            "queryWindow": "1m",
-            "attributeName": "bid",
-        }
-        resp = await client.get(CHAINLINK_API, params=params)
-        resp.raise_for_status()
-        data = resp.json()
-
-        nodes = data.get("data", {}).get("allStreamValuesGenerics", {}).get("nodes", [])
-        if not nodes:
-            return None
-
-        # First node is the most recent price
-        return float(nodes[0]["valueNumeric"])
+                
+        # Cleanup browser gracefully
+        try:
+            await asyncio.to_thread(page.quit)
+        except Exception:
+            pass
 
     def stop(self):
+        """Stop polling loop."""
         self._running = False
