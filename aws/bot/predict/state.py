@@ -55,8 +55,7 @@ class OrderRecord:
 @dataclass
 class Trade:
     """Full lifecycle of a single position: entry + optional exit."""
-    side: str                      # "up" or "down"
-    outcome_name: str              # "Up" or "Down"
+    outcome: str                   # "Up" or "Down"
     entry_price: float             # price paid per share at entry
     enter: OrderRecord
     amount: int = 0                # shares held (whole units, converted from wei)
@@ -127,6 +126,13 @@ class PredictState:
     @property
     def price_feed_provider(self) -> str | None:
         return self.market.get("variantData", {}).get("priceFeedProvider")
+    
+    @property
+    def active_trade(self) -> Trade | None:
+        """Return the last trade if its entry has been filled (i.e. we are holding)."""
+        if self.trades and self.trades[-1].enter.filled is not None and self.trades[-1].exit is None:
+            return self.trades[-1]
+        return None
 
     def is_ready(self) -> bool:
         """Return true if all prices are ready."""
@@ -227,7 +233,7 @@ class PredictState:
                 "ENTRY SIGNAL | slug=%s side=%s ev=%+.3f edge=%+.4f "
                 "diff=$%+.2f odds_rate=%+.3f",
                 self.slug,
-                forward.side_label,
+                forward.side,
                 forward.ev,
                 forward.edge,
                 forward.diff,
@@ -247,12 +253,12 @@ class PredictState:
             raise RuntimeError("No active trade found in state")
 
         forward = analysis.forward_model
-        model_disagrees = (forward.side != trade.side)
+        model_disagrees = (forward.side != trade.outcome)
         exit_ev_threshold = 0.03
 
         # Current bid for P&L logging
         prices = self.orderbook.get_price()
-        side_prices = prices["yes"] if trade.side == "up" else prices["no"]
+        side_prices = prices["yes"] if trade.outcome == "Up" else prices["no"]
         current_bid = side_prices["bid"] or trade.entry_price
         unrealized_pnl = current_bid - trade.entry_price
 
@@ -265,7 +271,7 @@ class PredictState:
             "unrealized_pnl=%+.4f entry=%.3f current_bid=%.3f",
             self.slug,
             reason,
-            trade.side,
+            trade.outcome,
             forward.side,
             forward.ev,
             unrealized_pnl,
@@ -286,18 +292,11 @@ class PredictState:
             "WATCH | slug=%s fwd_side=%s fwd_ev=%+.3f fwd_edge=%+.4f "
             "cur_side=%s cur_ev=%+.3f cur_edge=%+.4f",
             self.slug,
-            fwd.side_label, fwd.ev, fwd.edge,
-            cur.side_label, cur.ev, cur.edge,
+            fwd.side, fwd.ev, fwd.edge,
+            cur.side, cur.ev, cur.edge,
         )
 
     # ── Order execution (async, non-blocking) ─────────────────────
-
-    @property
-    def active_trade(self) -> Trade | None:
-        """Return the last trade if its entry has been filled (i.e. we are holding)."""
-        if self.trades and self.trades[-1].enter.filled is not None and self.trades[-1].exit is None:
-            return self.trades[-1]
-        return None
 
     async def _submit_buy_order(self, analysis: LatencyAnalysis) -> None:
         """Place a minimum buy order via smart_minimum_order, then poll for fill.
@@ -310,7 +309,7 @@ class PredictState:
            Still OPEN after all retries → cancel order, back to READY.
         """
         forward = analysis.forward_model
-        outcome_name = "Up" if forward.side == "up" else "Down"
+        outcome = forward.side
         price = forward.side_price
 
         enter_record = OrderRecord(
@@ -318,8 +317,7 @@ class PredictState:
             start=time.time(),
         )
         trade = Trade(
-            side=forward.side,
-            outcome_name=outcome_name,
+            outcome=outcome,
             entry_price=price,
             enter=enter_record,
         )
@@ -329,7 +327,7 @@ class PredictState:
         try:
             result = await self.client.smart_minimum_order(
                 market=self.market,
-                outcome_name=outcome_name,
+                outcome_name=outcome,
                 price=price,
                 side="BUY",
                 is_post_only=False,
@@ -357,7 +355,7 @@ class PredictState:
 
         logger.info(
             "BUY ORDER PLACED | slug=%s outcome=%s price=%.3f hash=%s",
-            self.slug, outcome_name, price, order_hash,
+            self.slug, outcome, price, order_hash,
         )
 
         # ── Step 2: poll for fill with backoff (0s, 2s, 4s) ─────
@@ -391,7 +389,7 @@ class PredictState:
                 logger.info(
                     "BUY FILLED | slug=%s outcome=%s price=%.3f amount=%d "
                     "fill_time=%.2fs hash=%s",
-                    self.slug, outcome_name, price, trade.amount,
+                    self.slug, outcome, price, trade.amount,
                     enter_record.filled - enter_record.start, order_hash,
                 )
                 return
@@ -448,13 +446,13 @@ class PredictState:
         # ── Step 1: place the sell order (exact amount held) ──────
         logger.info(
             "SELL ORDER | slug=%s outcome=%s price=%.3f amount=%d",
-            self.slug, trade.outcome_name, sell_price, trade.amount,
+            self.slug, trade.outcome, sell_price, trade.amount,
         )
         expiration_ts = int(time.time()) + 130
         try:
             result = await self.client.place_limit_order(
                 market=self.market,
-                outcome_name=trade.outcome_name,
+                outcome_name=trade.outcome,
                 side="SELL",
                 price=sell_price,
                 size=trade.amount,
@@ -487,7 +485,7 @@ class PredictState:
 
         logger.info(
             "SELL ORDER PLACED | slug=%s outcome=%s price=%.3f hash=%s",
-            self.slug, trade.outcome_name, sell_price, order_hash,
+            self.slug, trade.outcome, sell_price, order_hash,
         )
 
         # ── Step 2: poll for fill with backoff (0s, 2s, 4s) ─────
@@ -522,7 +520,7 @@ class PredictState:
                 logger.info(
                     "SELL FILLED | slug=%s outcome=%s exit=%.3f entry=%.3f "
                     "pnl=%+.4f fill_time=%.2fs hash=%s",
-                    self.slug, trade.outcome_name, sell_price,
+                    self.slug, trade.outcome, sell_price,
                     trade.entry_price, trade.pnl,
                     exit_record.filled - exit_record.start, order_hash,
                 )
@@ -600,13 +598,12 @@ class PredictState:
         """
         resolution = market_data.get("resolution", {})
         resolved_name = resolution.get("name", "")  # "Up" or "Down"
-        resolved_side = "up" if resolved_name == "Up" else "down"
 
         self.stop_orders()
 
         trade = self.active_trade
         if trade:
-            if resolved_side == trade.side:
+            if resolved_name == trade.outcome:
                 trade.exit_price = 1.0
             else:
                 trade.exit_price = 0.0
@@ -617,7 +614,7 @@ class PredictState:
                 "entry=%.3f exit=%.3f pnl=%+.4f amount=%d",
                 self.slug,
                 resolved_name,
-                trade.side,
+                trade.outcome,
                 trade.entry_price,
                 trade.exit_price,
                 trade.pnl,

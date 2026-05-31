@@ -203,7 +203,7 @@ class LatencySignal:
     """Signal from the latency-based probability model."""
     diff: float            # price_source - start_price (USD)
     p_up: float            # modeled P(up)
-    side: str              # "up" or "down"
+    side: str              # "Up" or "Down"
     side_price: float      # current ask we'd buy at
     edge: float            # modeled_prob - side_price
     ev: float              # edge / side_price — expected return per dollar risked
@@ -213,26 +213,16 @@ class LatencySignal:
     start_price: float
 
 
-    @property
-    def side_label(self) -> str:
-        return "YES" if self.side == "up" else "NO"
-
-
 
 @dataclass(frozen=True)
 class LatencyModel:
     """Model evaluation for a specific price vs open price."""
     diff: float            # target_price - start_price (USD)
     p_up: float            # modeled P(up)
-    side: str              # "up" or "down"
+    side: str              # "Up" or "Down"
     side_price: float      # current ask we'd buy at
     edge: float            # modeled_prob - side_price
     ev: float              # edge / side_price
-
-
-    @property
-    def side_label(self) -> str:
-        return "YES" if self.side == "up" else "NO"
 
 
 @dataclass(frozen=True)
@@ -263,11 +253,11 @@ def _evaluate_model(
     p_up = estimate_up_probability(diff, k)
 
     if p_up >= 0.5:
-        side = "up"
+        side = "Up"
         edge = p_up - yes_price
         side_price = yes_price
     else:
-        side = "down"
+        side = "Down"
         edge = (1.0 - p_up) - no_price
         side_price = no_price
 
@@ -315,7 +305,7 @@ def get_expected_latency_signal(
 
     logger.debug(
         "EXPECTED_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f",
-        model.side_label, model.diff, model.p_up, model.edge, model.ev, model.side_price,
+        model.side, model.diff, model.p_up, model.edge, model.ev, model.side_price,
     )
 
     return LatencySignal(
@@ -361,7 +351,7 @@ def get_current_latency_signal(
 
     logger.debug(
         "CURRENT_LATENCY: side=%s diff=$%+.2f p_up=%.3f edge=%+.3f ev=%+.2f side_price=$%.2f",
-        model.side_label, model.diff, model.p_up, model.edge, model.ev, model.side_price,
+        model.side, model.diff, model.p_up, model.edge, model.ev, model.side_price,
     )
 
     return LatencySignal(
