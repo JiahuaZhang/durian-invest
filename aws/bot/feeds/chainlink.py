@@ -54,22 +54,27 @@ class ChainlinkFeed:
         def _init_browser():
             co = ChromiumOptions()
             co.headless(True)
+            co.auto_port()  # Avoid port conflicts with zombie processes
             co.set_argument('--disable-blink-features=AutomationControlled')
             co.set_user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
             # Mute audio to avoid any hidden media autoplay errors
             co.mute(True)
             
             p = ChromiumPage(co)
+            return p
+            
+        def _navigate_and_bypass(p: ChromiumPage):
             logger.info("DrissionPage: Navigating to Chainlink to bypass Cloudflare...")
+            p.clear_cache(cookies=True)
             p.get("https://data.chain.link/streams/btc-usd-cexprice-streams")
             
             # Wait for Vercel Security Checkpoint to pass
             p.wait.title_change('Just a moment...', timeout=15)
             logger.info(f"DrissionPage: Cloudflare bypassed. Title: {p.title}")
-            return p
 
         try:
             page = await asyncio.to_thread(_init_browser)
+            await asyncio.to_thread(_navigate_and_bypass, page)
         except Exception as e:
             logger.error(f"Failed to initialize DrissionPage: {e}")
             if self.stop_event:
@@ -105,16 +110,26 @@ class ChainlinkFeed:
                     if self.on_update:
                         self.on_update("chainlink", self.price)
                 else:
-                    if err == 429:
-                        logger.error("Chainlink feed got 429 Too Many Requests even with DrissionPage. Stopping bot to avoid IP ban.")
+                    if err == 429 or (isinstance(err, str) and "SyntaxError" in err):
+                        logger.warning(f"Chainlink feed got blocked (Error: {err}). Attempting to recover by clearing cookies and refreshing...")
+                        # await asyncio.sleep(5)
+                        await asyncio.to_thread(_navigate_and_bypass, page)
+                        logger.info("Chainlink feed recovery attempt complete. Resuming polling.")
+                        continue
+                    elif isinstance(err, int) and 500 <= err < 600:
+                        logger.warning(f"Chainlink API transient server error ({err}). Retrying...")
+                        continue
+                    else:
+                        logger.error(f"Chainlink fetch encountered unknown error: {err}. Halting bot.")
                         if self.stop_event:
                             self.stop_event.set()
                         break
-                    else:
-                        logger.warning(f"Chainlink fetch error: {err}")
                         
             except Exception as e:
-                logger.error(f"Chainlink feed error: {e}")
+                logger.error(f"Chainlink feed error: {e}. Halting bot.")
+                if self.stop_event:
+                    self.stop_event.set()
+                break
                 
             if self._running:
                 await asyncio.sleep(self.poll_seconds)

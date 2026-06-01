@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import os
+import ctypes
 
 from bot.config import load_config
 from bot.feeds.chainlink import ChainlinkFeed
@@ -7,6 +9,15 @@ from bot.feeds.chainlink import ChainlinkFeed
 # Configure logging to see the outputs clearly when running the test
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+def prevent_windows_sleep():
+    if os.name == 'nt':
+        try:
+            # ES_CONTINUOUS = 0x80000000 | ES_SYSTEM_REQUIRED = 0x00000001
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000001)
+            logger.info("Prevented Windows from auto-sleeping.")
+        except Exception as e:
+            logger.warning(f"Failed to prevent Windows sleep: {e}")
 
 def test_chainlink_feed_live():
     """
@@ -16,12 +27,18 @@ def test_chainlink_feed_live():
     asyncio.run(_test_chainlink_feed_live(continuous=False))
 
 async def _test_chainlink_feed_live(continuous: bool = False):
+    prevent_windows_sleep()
+    
     # 1. Load config (validate=False avoids needing full .env API keys just to test feeds)
     config = load_config(validate=False)    
 
     # 2. Callback for each price update
+    count = 0
     def on_update(source: str, price: float):
-        logger.info(f"Received update from {source}: ${price:.2f}")
+        nonlocal count
+        count = (count + 1) % 300
+        if count == 1:
+            logger.info(f"Received update from {source}: ${price:.2f}")
 
     # 3. Initialize feed
     feed = ChainlinkFeed(
@@ -59,3 +76,5 @@ if __name__ == "__main__":
         logger.info("Stopped by user.")
 
 # $env:PYTHONPATH="."; uv run pytest tests/test_chainlink.py -s -v --log-cli-level=INFO
+
+# $env:PYTHONPATH=".";  uv run python tests/test_chainlink.py
